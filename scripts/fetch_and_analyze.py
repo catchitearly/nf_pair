@@ -58,7 +58,7 @@ def get_atm_strike() -> int:
 # ─────────────────────────────────────────────
 def build_symbol(strike: int, opt_type: str) -> str:
     # Format: NSE:NIFTY25626CE24400
-    return f"NSE:NIFTY{EXPIRY_DATE}{strike}{opt_type}"
+    return f"NSE:NIFTY{EXPIRY_DATE}{opt_type}{strike}"
 
 
 def build_pairs(atm: int) -> list[dict]:
@@ -194,33 +194,80 @@ def detect_crossovers(df: pd.DataFrame, pair_label: str) -> list[dict]:
 # ─────────────────────────────────────────────
 # STEP 6: SEND TELEGRAM ALERT
 # ─────────────────────────────────────────────
+TG_MAX_CHARS = 4000   # Telegram limit is 4096; stay safely under
+
+def _tg_post(text: str) -> bool:
+    """Send a single message to Telegram. Returns True on success."""
+    url     = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    r = requests.post(url, json=payload, timeout=10)
+    if r.status_code != 200:
+        print(f"❌ Telegram error: {r.text}")
+        return False
+    return True
+
+
 def send_telegram(alerts: list[dict]):
     if not alerts:
         print("No crossover alerts to send.")
         return
 
-    lines = ["🚨 *Nifty Options Crossover Alerts*\n"]
+    # ── Summary message (always 1 message) ──────────────────
+    bull = sum(1 for a in alerts if "↑" in a["type"])
+    bear = len(alerts) - bull
+
+    # Count per pair
+    from collections import Counter
+    pair_counts = Counter(a["pair"] for a in alerts)
+    pair_lines  = "\n".join(
+        f"  • {pair}: {cnt}" for pair, cnt in pair_counts.most_common()
+    )
+
+    summary = (
+        f"📊 *Nifty Options — Crossover Summary*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Total alerts : {len(alerts)}\n"
+        f"🟢 Bullish   : {bull}\n"
+        f"🔴 Bearish   : {bear}\n\n"
+        f"*By Pair:*\n{pair_lines}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"_Details follow in next message(s)_"
+    )
+    _tg_post(summary)
+
+    # ── Detail messages — chunked to stay under 4000 chars ──
+    # Build individual alert lines first
+    alert_lines = []
     for a in alerts:
         arrow = "🟢" if "↑" in a["type"] else "🔴"
-        lines.append(
+        alert_lines.append(
             f"{arrow} *{a['pair']}*\n"
-            f"  Signal : {a['type']}\n"
-            f"  Premium: ₹{a['price']:.2f}\n"
-            f"  Time   : {a['time']}\n"
+            f"  {a['type']} | ₹{a['price']:.2f} | {a['time']}"
         )
 
-    message = "\n".join(lines)
-    url     = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id":    TG_CHAT_ID,
-        "text":       message,
-        "parse_mode": "Markdown",
-    }
-    r = requests.post(url, json=payload, timeout=10)
-    if r.status_code == 200:
-        print(f"✅ Telegram: sent {len(alerts)} alert(s)")
-    else:
-        print(f"❌ Telegram error: {r.text}")
+    # Pack lines into chunks
+    chunk_header = "🚨 *Crossover Alerts*\n━━━━━━━━━━━━━━━━━━━━\n"
+    current_chunk = chunk_header
+    chunk_num     = 0
+    sent_chunks   = 0
+
+    for line in alert_lines:
+        candidate = current_chunk + line + "\n\n"
+        if len(candidate) > TG_MAX_CHARS:
+            # Send current chunk and start a new one
+            if _tg_post(current_chunk.rstrip()):
+                sent_chunks += 1
+            chunk_num    += 1
+            current_chunk = chunk_header + line + "\n\n"
+        else:
+            current_chunk = candidate
+
+    # Send remaining chunk
+    if current_chunk.strip() != chunk_header.strip():
+        if _tg_post(current_chunk.rstrip()):
+            sent_chunks += 1
+
+    print(f"✅ Telegram: summary + {sent_chunks} detail message(s) sent ({len(alerts)} alerts)")
 
 
 # ─────────────────────────────────────────────
