@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write           # Needed to push to gh-pages branch
+  pages: write
 
 jobs:
   run-analyzer:
