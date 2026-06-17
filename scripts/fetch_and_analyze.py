@@ -309,9 +309,11 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
             "cx_labels": cx_labels,
         })
 
+    # Safely convert to clean JSON string
     charts_json = json.dumps(charts)
 
-    html = f"""<!DOCTYPE html>
+    # Note the change here: We use standard replacement instead of risky nesting inside f-strings
+    html_template = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -319,30 +321,30 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
 <title>Nifty Options Pair Dashboard</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
-  :root {{
-    --bg:       #0d1117;
+  :root {
+    --bg:        #0d1117;
     --surface:  #161b22;
-    --border:   #30363d;
-    --text:     #e6edf3;
+    --border:    #30363d;
+    --text:      #e6edf3;
     --muted:    #8b949e;
     --green:    #3fb950;
     --red:      #f85149;
-    --blue:     #58a6ff;
+    --blue:      #58a6ff;
     --yellow:   #d29922;
     --purple:   #bc8cff;
     --accent:   #1f6feb;
-  }}
+  }
 
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  body {{
+  body {
     background: var(--bg);
     color: var(--text);
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     min-height: 100vh;
-  }}
+  }
 
-  header {{
+  header {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     padding: 18px 32px;
@@ -352,26 +354,26 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
     position: sticky;
     top: 0;
     z-index: 100;
-  }}
+  }
 
-  .header-left h1 {{
+  .header-left h1 {
     font-size: 1.25rem;
     font-weight: 600;
     letter-spacing: -0.02em;
     color: var(--text);
-  }}
+  }
 
-  .header-left h1 span {{
+  .header-left h1 span {
     color: var(--blue);
-  }}
+  }
 
-  .header-meta {{
+  .header-meta {
     font-size: 0.78rem;
     color: var(--muted);
     margin-top: 2px;
-  }}
+  }
 
-  .badge {{
+  .badge {
     background: var(--accent);
     color: #fff;
     font-size: 0.7rem;
@@ -380,115 +382,115 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
     border-radius: 20px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-  }}
+  }
 
-  .legend-bar {{
+  .legend-bar {
     display: flex;
     gap: 20px;
     padding: 10px 32px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     flex-wrap: wrap;
-  }}
+  }
 
-  .legend-item {{
+  .legend-item {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 0.78rem;
     color: var(--muted);
-  }}
+  }
 
-  .legend-dot {{
+  .legend-dot {
     width: 24px;
     height: 3px;
     border-radius: 2px;
-  }}
+  }
 
-  .main {{
+  .main {
     padding: 24px 32px;
     display: flex;
     flex-direction: column;
     gap: 24px;
     max-width: 1400px;
     margin: 0 auto;
-  }}
+  }
 
-  .pair-card {{
+  .pair-card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: hidden;
-  }}
+  }
 
-  .pair-header {{
+  .pair-header {
     padding: 14px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid var(--border);
-  }}
+  }
 
-  .pair-title {{
+  .pair-title {
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--text);
-  }}
+  }
 
-  .pair-stats {{
+  .pair-stats {
     display: flex;
     gap: 16px;
-  }}
+  }
 
-  .stat {{
+  .stat {
     text-align: right;
-  }}
+  }
 
-  .stat-label {{
+  .stat-label {
     font-size: 0.65rem;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-  }}
+  }
 
-  .stat-value {{
+  .stat-value {
     font-size: 0.85rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-  }}
+  }
 
-  .green {{ color: var(--green); }}
-  .red   {{ color: var(--red);   }}
-  .blue  {{ color: var(--blue);  }}
+  .green { color: var(--green); }
+  .red   { color: var(--red);   }
+  .blue  { color: var(--blue);  }
 
-  .chart-wrap {{
+  .chart-wrap {
     padding: 0;
-  }}
+  }
 
-  .alerts-section {{
+  .alerts-section {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: hidden;
-  }}
+  }
 
-  .alerts-header {{
+  .alerts-header {
     padding: 14px 20px;
     border-bottom: 1px solid var(--border);
     font-size: 0.9rem;
     font-weight: 600;
-  }}
+  }
 
-  .alerts-body {{
+  .alerts-body {
     padding: 12px 20px;
     display: flex;
     flex-direction: column;
     gap: 8px;
     max-height: 300px;
     overflow-y: auto;
-  }}
+  }
 
-  .alert-row {{
+  .alert-row {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -496,55 +498,55 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
     background: var(--bg);
     border-radius: 6px;
     font-size: 0.8rem;
-  }}
+  }
 
-  .alert-icon {{ font-size: 1rem; }}
+  .alert-icon { font-size: 1rem; }
 
-  .alert-info {{ flex: 1; }}
+  .alert-info { flex: 1; }
 
-  .alert-pair {{
+  .alert-pair {
     font-weight: 600;
     color: var(--text);
-  }}
+  }
 
-  .alert-type {{
+  .alert-type {
     color: var(--muted);
     font-size: 0.75rem;
     margin-top: 1px;
-  }}
+  }
 
-  .alert-price {{
+  .alert-price {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 0.85rem;
-  }}
+  }
 
-  .alert-time {{
+  .alert-time {
     color: var(--muted);
     font-size: 0.72rem;
     white-space: nowrap;
-  }}
+  }
 
-  .no-alerts {{
+  .no-alerts {
     color: var(--muted);
     font-size: 0.82rem;
     padding: 12px 0;
     text-align: center;
-  }}
+  }
 
-  .error-card {{
+  .error-card {
     padding: 32px;
     text-align: center;
     color: var(--muted);
     font-size: 0.85rem;
-  }}
+  }
 
-  @media (max-width: 640px) {{
-    .main {{ padding: 16px; }}
-    header {{ padding: 14px 16px; }}
-    .pair-stats {{ display: none; }}
-    .legend-bar {{ padding: 10px 16px; }}
-  }}
+  @media (max-width: 640px) {
+    .main { padding: 16px; }
+    header { padding: 14px 16px; }
+    .pair-stats { display: none; }
+    .legend-bar { padding: 10px 16px; }
+  }
 </style>
 </head>
 <body>
@@ -552,7 +554,7 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
 <header>
   <div class="header-left">
     <h1>Nifty Options <span>Pair Dashboard</span></h1>
-    <div class="header-meta">Expiry {EXPIRY_DATE} · 5-min · Last 2 Trading Days · Updated {run_time}</div>
+    <div class="header-meta">Expiry __EXPIRY__ · 5-min · Last 2 Trading Days · Updated __RUNTIME__</div>
   </div>
   <span class="badge">Live Analysis</span>
 </header>
@@ -584,78 +586,82 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
 </div>
 
 <script>
-const CHARTS = {charts_json};
+const CHARTS = __CHARTS_DATA__;
 
-const plotlyLayout = (label) => ({{
+const plotlyLayout = (label) => ({
   paper_bgcolor: 'transparent',
   plot_bgcolor:  'transparent',
-  margin:        {{ t: 10, b: 40, l: 60, r: 20 }},
+  margin:        { t: 10, b: 40, l: 60, r: 20 },
   height:        280,
-  xaxis: {{
+  xaxis: {
     gridcolor:    '#21262d',
-    tickfont:     {{ color: '#8b949e', size: 10 }},
+    tickfont:     { color: '#8b949e', size: 10 },
     linecolor:    '#30363d',
-    showgrid:     true,
+    showgrid:      true,
     tickangle:    -30,
-  }},
-  yaxis: {{
+  },
+  yaxis: {
     gridcolor:    '#21262d',
-    tickfont:     {{ color: '#8b949e', size: 10 }},
+    tickfont:     { color: '#8b949e', size: 10 },
     linecolor:    '#30363d',
-    showgrid:     true,
+    showgrid:      true,
     tickprefix:   '₹',
-  }},
-  legend: {{ bgcolor: 'transparent', font: {{ color: '#8b949e', size: 10 }} }},
+  },
+  legend: { bgcolor: 'transparent', font: { color: '#8b949e', size: 10 } },
   hovermode: 'x unified',
-  hoverlabel: {{
+  hoverlabel: {
     bgcolor:    '#161b22',
     bordercolor:'#30363d',
-    font:       {{ color: '#e6edf3', size: 11 }},
-  }},
-}});
+    font:        { color: '#e6edf3', size: 11 },
+  },
+});
 
 const allAlerts = [];
 
-function buildCharts() {{
+function buildCharts() {
   const container = document.getElementById('charts-container');
+  if(!CHARTS || CHARTS.length === 0) {
+     container.innerHTML = '<div class="error-card">⚠️ No analytical charts loaded. Check backend API pipeline.</div>';
+     return;
+  }
 
-  CHARTS.forEach((c, idx) => {{
+  CHARTS.forEach((c, idx) => {
     const card = document.createElement('div');
     card.className = 'pair-card';
 
-    if (c.error) {{
+    if (c.error) {
       card.innerHTML = `
-        <div class="pair-header"><span class="pair-title">${{c.label}}</span></div>
+        <div class="pair-header"><span class="pair-title">${c.label}</span></div>
         <div class="error-card">⚠️ No data available for this pair</div>`;
       container.appendChild(card);
       return;
-    }}
+    }
 
     const lastPremium = c.premium.at(-1);
     const lastVwap    = c.vwap.at(-1);
-    const lastEma     = c.ema9.at(-1);
+    const lastEma      = c.ema9.at(-1);
     const vsVwap      = lastPremium - lastVwap;
     const vsEma       = lastPremium - lastEma;
 
     card.innerHTML = `
       <div class="pair-header">
-        <span class="pair-title">${{c.label}}</span>
+        <span class="pair-title">${c.label}</span>
         <div class="pair-stats">
           <div class="stat">
             <div class="stat-label">Premium</div>
-            <div class="stat-value blue">₹${{lastPremium.toFixed(2)}}</div>
+            <div class="stat-value blue">₹${lastPremium.toFixed(2)}</div>
           </div>
           <div class="stat">
             <div class="stat-label">vs VWAP</div>
-            <div class="stat-value ${{vsVwap >= 0 ? 'green' : 'red'}}">${{vsVwap >= 0 ? '+' : ''}}${{vsVwap.toFixed(2)}}</div>
+            <div class="stat-value ${vsVwap >= 0 ? 'green' : 'red'}">${vsVwap >= 0 ? '+' : ''}${vsVwap.toFixed(2)}</div>
           </div>
           <div class="stat">
             <div class="stat-label">vs EMA9</div>
-            <div class="stat-value ${{vsEma >= 0 ? 'green' : 'red'}}">${{vsEma >= 0 ? '+' : ''}}${{vsEma.toFixed(2)}}</div>
+            <div class="stat-value ${vsEma >= 0 ? 'green' : 'red'}">${vsEma >= 0 ? '+' : ''}${vsEma.toFixed(2)}</div>
           </div>
         </div>
       </div>
-      <div class="chart-wrap"><div id="chart-${{idx}}"></div></div>`;
+      <div class="chart-wrap"><div id="chart-${idx}"></div></div>`;
 
     container.appendChild(card);
 
@@ -663,91 +669,96 @@ function buildCharts() {{
     const bullTimes  = [], bullPrices = [], bullLabels = [];
     const bearTimes  = [], bearPrices = [], bearLabels = [];
 
-    c.cx_labels.forEach((lbl, i) => {{
-      if (lbl.includes('↑')) {{
+    c.cx_labels.forEach((lbl, i) => {
+      if (lbl.includes('↑')) {
         bullTimes.push(c.cx_times[i]);
         bullPrices.push(c.cx_prices[i]);
         bullLabels.push(lbl);
-        allAlerts.push({{ ...c, time: c.cx_times[i], type: lbl, price: c.cx_prices[i], bull: true }});
-      }} else {{
+        allAlerts.push({ ...c, time: c.cx_times[i], type: lbl, price: c.cx_prices[i], bull: true });
+      } else {
         bearTimes.push(c.cx_times[i]);
         bearPrices.push(c.cx_prices[i]);
         bearLabels.push(lbl);
-        allAlerts.push({{ ...c, time: c.cx_times[i], type: lbl, price: c.cx_prices[i], bull: false }});
-      }}
-    }});
+        allAlerts.push({ ...c, time: c.cx_times[i], type: lbl, price: c.cx_prices[i], bull: false });
+      }
+    });
 
     const traces = [
-      {{
+      {
         x: c.times, y: c.premium, name: 'Premium',
         type: 'scatter', mode: 'lines',
-        line: {{ color: '#58a6ff', width: 2 }},
-      }},
-      {{
+        line: { color: '#58a6ff', width: 2 },
+      },
+      {
         x: c.times, y: c.vwap, name: 'VWAP',
         type: 'scatter', mode: 'lines',
-        line: {{ color: '#d29922', width: 1.5, dash: 'dot' }},
-      }},
-      {{
+        line: { color: '#d29922', width: 1.5, dash: 'dot' },
+      },
+      {
         x: c.times, y: c.ema9, name: 'EMA 9',
         type: 'scatter', mode: 'lines',
-        line: {{ color: '#bc8cff', width: 1.5, dash: 'dash' }},
-      }},
-      {{
+        line: { color: '#bc8cff', width: 1.5, dash: 'dash' },
+      },
+      {
         x: bullTimes, y: bullPrices, name: 'Bull Cross',
         text: bullLabels,
         type: 'scatter', mode: 'markers',
-        marker: {{ color: '#3fb950', size: 9, symbol: 'triangle-up' }},
-        hovertemplate: '%{{text}}<br>₹%{{y:.2f}}<extra></extra>',
-      }},
-      {{
+        marker: { color: '#3fb950', size: 9, symbol: 'triangle-up' },
+        hovertemplate: '%{text}<br>₹%{y:.2f}<extra></extra>',
+      },
+      {
         x: bearTimes, y: bearPrices, name: 'Bear Cross',
         text: bearLabels,
         type: 'scatter', mode: 'markers',
-        marker: {{ color: '#f85149', size: 9, symbol: 'triangle-down' }},
-        hovertemplate: '%{{text}}<br>₹%{{y:.2f}}<extra></extra>',
-      }},
+        marker: { color: '#f85149', size: 9, symbol: 'triangle-down' },
+        hovertemplate: '%{text}<br>₹%{y:.2f}<extra></extra>',
+      },
     ];
 
-    Plotly.newPlot(`chart-${{idx}}`, traces, plotlyLayout(c.label), {{
+    Plotly.newPlot(`chart-${idx}`, traces, plotlyLayout(c.label), {
       responsive:  true,
       displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-    }});
-  }});
-}}
+    });
+  });
+}
 
-function buildAlerts() {{
+function buildAlerts() {
   const body = document.getElementById('alerts-body');
-  if (allAlerts.length === 0) {{
+  if (allAlerts.length === 0) {
     body.innerHTML = '<div class="no-alerts">No crossover alerts in this session</div>';
     return;
-  }}
+  }
 
-  // Sort by time descending (last alert first)
   allAlerts.sort((a, b) => b.time.localeCompare(a.time));
 
-  allAlerts.forEach(a => {{
+  allAlerts.forEach(a => {
     const row = document.createElement('div');
     row.className = 'alert-row';
     row.innerHTML = `
-      <span class="alert-icon">${{a.bull ? '🟢' : '🔴'}}</span>
+      <span class="alert-icon">${a.bull ? '🟢' : '🔴'}</span>
       <div class="alert-info">
-        <div class="alert-pair">${{a.label}}</div>
-        <div class="alert-type">${{a.type}}</div>
+        <div class="alert-pair">${a.label}</div>
+        <div class="alert-type">${a.type}</div>
       </div>
-      <div class="alert-price ${{a.bull ? 'green' : 'red'}}">₹${{a.price.toFixed(2)}}</div>
-      <div class="alert-time">${{a.time}}</div>`;
+      <div class="alert-price ${a.bull ? 'green' : 'red'}">₹${a.price.toFixed(2)}</div>
+      <div class="alert-time">${a.time}</div>`;
     body.appendChild(row);
-  }});
-}}
+  });
+}
 
 buildCharts();
 buildAlerts();
 </script>
 </body>
 </html>"""
-    return html
+
+    # Safe data replacement avoiding syntax compilation failure
+    rendered = html_template.replace("__CHARTS_DATA__", charts_json)
+    rendered = rendered.replace("__EXPIRY__", EXPIRY_DATE)
+    rendered = rendered.replace("__RUNTIME__", run_time)
+    
+    return rendered
 
 
 # ─────────────────────────────────────────────
