@@ -2,7 +2,9 @@ name: Nifty Options Pair Analyzer
 
 on:
   schedule:
-    
+    # IST = UTC + 5:30. Market hours are 09:15–15:30 IST = 03:45–10:00 UTC, Mon–Fri.
+    - cron: '45-59/5 3 * * 1-5'   # 09:15, 09:20, 09:25 IST
+    - cron: '*/5 4-9 * * 1-5'     # 09:30 IST through 15:25 IST, every 5 min
   workflow_dispatch: {}            # adds a manual "Run workflow" button for testing
 
 permissions:
