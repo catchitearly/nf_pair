@@ -1,0 +1,47 @@
+name: Nifty Options Dashboard
+
+on:
+  workflow_dispatch:        # Manual trigger from GitHub Actions UI
+
+permissions:
+  contents: write           # Needed to push to gh-pages branch
+
+jobs:
+  run-analyzer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ── 1. Checkout repo ──────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ──────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── 3. Install dependencies ───────────────────────────
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 4. Run analyzer script ────────────────────────────
+      - name: Run Nifty Options Analyzer
+        env:
+          FYERS_CLIENT_ID:    ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/fetch_and_analyze.py
+
+      # ── 5. Deploy docs/ to GitHub Pages ───────────────────
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:  ./docs
+          publish_branch: gh-pages
+          commit_message: "chore: update dashboard [skip ci]"
+          force_orphan: false
