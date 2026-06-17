@@ -178,33 +178,21 @@ def compute_indicators(ce_df: pd.DataFrame, pe_df: pd.DataFrame) -> pd.DataFrame
 # STEP 5: DETECT CROSSOVERS
 # ─────────────────────────────────────────────
 def detect_crossovers(df: pd.DataFrame, pair_label: str) -> list[dict]:
-    alerts = []
-    premium = df["premium"].values
+    """Flags only EMA9 crossing VWAP. Price-vs-VWAP and price-vs-EMA9
+    crossovers are intentionally not checked anymore."""
+    alerts  = []
     vwap    = df["vwap"].values
     ema9    = df["ema9"].values
+    premium = df["premium"].values
     times   = df.index
 
     for i in range(1, len(df)):
-        ts    = times[i].strftime("%d-%b %I:%M %p")
-        price = premium[i]   # combined premium — always reported in Telegram alerts
+        ts = times[i].strftime("%d-%b %I:%M %p")
 
-        # Price crosses VWAP
-        if premium[i - 1] < vwap[i - 1] and premium[i] >= vwap[i]:
-            alerts.append({"time": ts, "pair": pair_label, "type": "Price crossed ↑ VWAP", "kind": "price_vwap", "price": price, "y": price})
-        elif premium[i - 1] > vwap[i - 1] and premium[i] <= vwap[i]:
-            alerts.append({"time": ts, "pair": pair_label, "type": "Price crossed ↓ VWAP", "kind": "price_vwap", "price": price, "y": price})
-
-        # Price crosses EMA9
-        if premium[i - 1] < ema9[i - 1] and premium[i] >= ema9[i]:
-            alerts.append({"time": ts, "pair": pair_label, "type": "Price crossed ↑ EMA9", "kind": "price_ema9", "price": price, "y": price})
-        elif premium[i - 1] > ema9[i - 1] and premium[i] <= ema9[i]:
-            alerts.append({"time": ts, "pair": pair_label, "type": "Price crossed ↓ EMA9", "kind": "price_ema9", "price": price, "y": price})
-
-        # EMA9 crosses VWAP — anchor on the EMA9/VWAP value itself, not the premium curve
         if ema9[i - 1] < vwap[i - 1] and ema9[i] >= vwap[i]:
-            alerts.append({"time": ts, "pair": pair_label, "type": "EMA9 crossed ↑ VWAP", "kind": "ema_vwap", "price": price, "y": ema9[i]})
+            alerts.append({"time": ts, "pair": pair_label, "type": "EMA9 crossed ↑ VWAP", "price": premium[i], "y": ema9[i]})
         elif ema9[i - 1] > vwap[i - 1] and ema9[i] <= vwap[i]:
-            alerts.append({"time": ts, "pair": pair_label, "type": "EMA9 crossed ↓ VWAP", "kind": "ema_vwap", "price": price, "y": ema9[i]})
+            alerts.append({"time": ts, "pair": pair_label, "type": "EMA9 crossed ↓ VWAP", "price": premium[i], "y": ema9[i]})
 
     return alerts
 
@@ -314,7 +302,6 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
         cx_times  = [c["time"] for c in cross]
         cx_prices = [c["price"] for c in cross]
         cx_labels = [c["type"] for c in cross]
-        cx_kinds  = [c["kind"] for c in cross]
         cx_y      = [c["y"] for c in cross]
 
         charts.append({
@@ -327,7 +314,6 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
             "cx_times":  cx_times,
             "cx_prices": cx_prices,
             "cx_labels": cx_labels,
-            "cx_kinds":  cx_kinds,
             "cx_y":      cx_y,
         })
 
@@ -590,21 +576,17 @@ def generate_html(pairs_data: list[dict], run_time: str) -> str:
     <div class="legend-dot" style="background:#bc8cff"></div> EMA 9
   </div>
   <div class="legend-item">
-    <div class="legend-dot" style="background:#d29922; width:10px; height:10px; border-radius:50%"></div> Price × VWAP Cross
+    <div class="legend-dot" style="background:#3fb950; width:10px; height:10px; border-radius:50%"></div> EMA9 crossed above VWAP (Bullish)
   </div>
   <div class="legend-item">
-    <div class="legend-dot" style="background:#bc8cff; width:10px; height:10px; border-radius:50%"></div> Price × EMA9 Cross
+    <div class="legend-dot" style="background:#f85149; width:10px; height:10px; border-radius:50%"></div> EMA9 crossed below VWAP (Bearish)
   </div>
-  <div class="legend-item">
-    <div class="legend-dot" style="background:#2dd4bf; width:10px; height:10px; border-radius:50%"></div> EMA9 × VWAP Cross
-  </div>
-  <div class="legend-item">▲ Bullish &nbsp;&nbsp; ▼ Bearish</div>
 </div>
 
 <div class="main" id="main">
   <div id="charts-container"></div>
   <div class="alerts-section">
-    <div class="alerts-header">🚨 Last 5 Crossovers</div>
+    <div class="alerts-header">🚨 Last 5 EMA9×VWAP Crossovers</div>
     <div class="alerts-body" id="alerts-body"></div>
   </div>
 </div>
@@ -640,19 +622,6 @@ const plotlyLayout = (label, annotations = []) => ({{
     font:       {{ color: '#e6edf3', size: 11 }},
   }},
 }});
-
-// Color/label per crossover type — matches each line's own color so it's
-// obvious at a glance which two series crossed.
-const KIND_COLORS = {{
-  price_vwap: '#d29922',   // same as VWAP line
-  price_ema9: '#bc8cff',   // same as EMA9 line
-  ema_vwap:   '#2dd4bf',   // distinct teal — EMA9 crossing VWAP itself
-}};
-const KIND_LABELS = {{
-  price_vwap: 'VWAP',
-  price_ema9: 'EMA9',
-  ema_vwap:   'E9×VWAP',
-}};
 
 const allAlerts = [];
 
@@ -699,29 +668,27 @@ function buildCharts() {{
 
     container.appendChild(card);
 
-    // Annotate only the most recent 5 crossovers for this pair
+    // Annotate only the most recent 5 EMA9×VWAP crossovers for this pair
     const n = c.cx_labels.length;
     const recentIdx = [];
     for (let k = Math.max(0, n - 5); k < n; k++) recentIdx.push(k);
 
     const annotations = recentIdx.map(k => {{
       const bull  = c.cx_labels[k].includes('↑');
-      const kind  = c.cx_kinds[k];
-      const color = KIND_COLORS[kind] || '#8b949e';
+      const color = bull ? '#3fb950' : '#f85149';
 
       allAlerts.push({{
         pairLabel: c.label,
         time:      c.cx_times[k],
         type:      c.cx_labels[k],
         price:     c.cx_prices[k],
-        kind,
         bull,
       }});
 
       return {{
         x: c.cx_times[k],
         y: c.cx_y[k],
-        text: KIND_LABELS[kind] + (bull ? ' ▲' : ' ▼'),
+        text: 'EMA9×VWAP' + (bull ? ' ▲' : ' ▼'),
         showarrow:  true,
         arrowhead:  3,
         arrowsize:  1,
@@ -776,7 +743,7 @@ function buildAlerts() {{
     .slice(0, 5);
 
   recent.forEach(a => {{
-    const color = KIND_COLORS[a.kind] || '#8b949e';
+    const color = a.bull ? '#3fb950' : '#f85149';
     const arrow = a.bull ? '▲' : '▼';
     const row = document.createElement('div');
     row.className = 'alert-row';
