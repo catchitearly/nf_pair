@@ -58,7 +58,7 @@ def get_atm_strike() -> int:
 # ─────────────────────────────────────────────
 def build_symbol(strike: int, opt_type: str) -> str:
     # Format: NSE:NIFTY25626CE24400
-    return f"NSE:NIFTY{EXPIRY_DATE}{opt_type}{strike}"
+    return f"NSE:NIFTY{EXPIRY_DATE}{strike}{opt_type}"
 
 
 def build_pairs(atm: int) -> list[dict]:
