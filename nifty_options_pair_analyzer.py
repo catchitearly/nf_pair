@@ -43,7 +43,7 @@ STRIKE_STEP     = 100
 OTM_RANGE       = 400              # ATM ± 400
 EMA_PERIOD      = 9
 RESOLUTION      = "5"             # 5-minute candles
-DAYS_BACK       = 5
+DAYS_BACK       = 2
 
 # ─────────────────────────────────────────────
 # FYERS CLIENT
