@@ -809,7 +809,7 @@ def main():
 
     # 4. Telegram alerts
     print(f"\nTotal crossovers detected: {len(all_alerts)}")
-    print(pairs_data)
+    
     send_telegram(all_alerts)
 
     # 5. Generate HTML
