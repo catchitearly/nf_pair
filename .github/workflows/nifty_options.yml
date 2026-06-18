@@ -1,8 +1,7 @@
 name: Nifty Options Pair Analyzer
 
 on:
-  schedule:
-    # IST = UTC + 5:30. Market hours are 09:15–15:30 IST = 03:45–10:00 UTC, Mon–Fri.
+  
    
   workflow_dispatch: {}            # adds a manual "Run workflow" button for testing
 
