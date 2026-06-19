@@ -778,7 +778,7 @@ def main():
     print(f"{'─'*50}\n")
 
     # 1. ATM Strike
-    atm   = 24100 #get_atm_strike()
+    atm   = 24000 #get_atm_strike()
     pairs = build_pairs(atm)
 
     # 2. Date range
