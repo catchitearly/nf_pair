@@ -216,6 +216,18 @@ def main():
 
     # ── Step 8: Save state ────────────────────────────────────────────────────
     state.save(current_sides)
+
+    # ── Step 9: Write snapshot JSON for GitHub Pages dashboard ───────────────
+    import snapshot
+    snapshot.write(
+        pair_cache   = pair_cache,
+        last_idx     = last_idx,
+        atm          = atm,
+        candle_time  = ctime,
+        current_data = current_data,
+        crossovers   = enriched,
+        mode         = "live",
+    )
     logger.info("Done")
 
 
