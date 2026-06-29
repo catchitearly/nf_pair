@@ -1,0 +1,87 @@
+name: Nifty Options · Backtest Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Backtest date (YYYY-MM-DD)"
+        required: true
+        default: "2026-06-22"
+      expiry:
+        description: "Expiry string e.g. 26JUN or 26JUN25"
+        required: true
+        default: "26JUN"
+      window:
+        description: "Widening candle window (3 / 5 / 10)"
+        required: false
+        default: "5"
+
+permissions:
+  contents: write
+  pages:    write
+  id-token: write
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15      # backtest fetches more data — allow extra time
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Python setup ──────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── 3. Install dependencies ──────────────────────────────────────────────
+      - name: Install dependencies
+        run: pip install fyers-apiv3
+
+      # ── 4. Run backtest pipeline ─────────────────────────────────────────────
+      - name: Run backtest
+        env:
+          FYERS_CLIENT_ID:    ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
+        run: |
+          python main.py \
+            --mode      backtest \
+            --date      "${{ github.event.inputs.date }}" \
+            --expiry    "${{ github.event.inputs.expiry }}" \
+            --window    "${{ github.event.inputs.window }}" \
+            --no-server
+
+      # ── 5. Commit docs/ snapshot ─────────────────────────────────────────────
+      - name: Commit backtest snapshot
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ ! -d docs ] || git diff --quiet docs/; then
+            echo "No changes in docs/ — skipping commit"
+            exit 0
+          fi
+
+          git add docs/
+          git commit -m "backtest: ${{ github.event.inputs.date }} ${{ github.event.inputs.expiry }} [skip ci]"
+
+          # Retry push with rebase on conflict (same pattern as live workflow)
+          MAX=5
+          for i in $(seq 1 $MAX); do
+            echo "Push attempt $i / $MAX ..."
+            if git push; then
+              echo "Push succeeded on attempt $i"
+              exit 0
+            fi
+            echo "Push rejected — pulling with rebase and retrying ..."
+            git pull --rebase --autostash origin main
+          done
+
+          echo "ERROR: could not push after $MAX attempts"
+          exit 1
