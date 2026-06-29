@@ -121,9 +121,8 @@ def main():
     fetcher.build_symbols(atm, args.expiry)
 
     # ── Step 3: Candles ───────────────────────────────────────────────────────
-    logger.info("Fetching yesterday → today candles …")
-    yesterday = fetcher._prev_trading_day(today)
-    fetcher.fetch_historical(yesterday, date_to=today)
+    logger.info("Fetching today's candles …")
+    fetcher.fetch_historical(today)
 
     non_empty = sum(1 for v in fetcher.candle_store.values() if v)
     if non_empty == 0:

@@ -76,14 +76,7 @@ def main():
 
     logger.info("Step 3/3 → Fetching %s candle data …",
                 "historical" if mode == "backtest" else "live")
-    if mode == "backtest":
-        # Fetch yesterday → date so VWAP has prior-day context
-        date_from = fetcher._prev_trading_day(date)
-        fetcher.fetch_historical(date_from, date_to=date)
-    else:
-        today     = datetime.date.today()
-        date_from = fetcher._prev_trading_day(today)
-        fetcher.fetch_historical(date_from, date_to=today)
+    fetcher.fetch_historical(date)
 
     logger.info("Computing EMA9 / VWAP for all pairs …")
     engine.build_all_pairs()

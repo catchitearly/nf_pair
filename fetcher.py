@@ -138,23 +138,15 @@ def build_symbols(strike: int, expiry: Optional[str] = None) -> Tuple[List[str],
 
 # ── historical fetch (backtest) ───────────────────────────────────────────────
 
-def fetch_historical(date: datetime.date, date_to: Optional[datetime.date] = None) -> None:
+def fetch_historical(date: datetime.date) -> None:
     """
-    Fetch 5-min OHLCV for all CE+PE symbols.
-    date      = start date (range_from)
-    date_to   = end date   (range_to); defaults to same as date (single day)
-    Use date=yesterday, date_to=today to get 2-day data including current session.
+    Fetch 5-min OHLCV for all CE+PE symbols for a given date.
     Populates candle_store.
     """
     global candle_store
     candle_store = {}
 
-    if date_to is None:
-        date_to = date
-
-    from_str = date.strftime("%Y-%m-%d")
-    to_str   = date_to.strftime("%Y-%m-%d")
-    logger.info("Date range: %s → %s", from_str, to_str)
+    dt_str = date.strftime("%Y-%m-%d")
 
     all_syms = ce_symbols + pe_symbols
     total    = len(all_syms)
@@ -166,8 +158,8 @@ def fetch_historical(date: datetime.date, date_to: Optional[datetime.date] = Non
                 "symbol":      sym,
                 "resolution":  config.CANDLE_RESOLUTION,
                 "date_format": "1",
-                "range_from":  from_str,
-                "range_to":    to_str,
+                "range_from":  dt_str,
+                "range_to":    dt_str,
                 "cont_flag":   "1"
             })
             candles = data.get("candles", [])
@@ -190,21 +182,12 @@ def fetch_historical(date: datetime.date, date_to: Optional[datetime.date] = Non
 # ── live polling ──────────────────────────────────────────────────────────────
 
 def append_live_candles() -> None:
-    today     = datetime.date.today()
-    yesterday = _prev_trading_day(today)
-    fetch_historical(yesterday, date_to=today)
+    today = datetime.date.today()
+    fetch_historical(today)
     logger.info("Live candle refresh complete")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-
-def _prev_trading_day(d: datetime.date) -> datetime.date:
-    """Return the most recent trading day before d (skip weekends)."""
-    prev = d - datetime.timedelta(days=1)
-    while prev.weekday() >= 5:   # 5=Sat, 6=Sun
-        prev -= datetime.timedelta(days=1)
-    return prev
 
 
 def _round_to_step(value: float, step: int) -> int:
