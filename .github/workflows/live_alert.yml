@@ -1,16 +1,12 @@
 name: Nifty Options · Live Crossover Alert
 
 on:
-  # cronjob.org hits this URL to trigger the workflow:
-  # https://api.github.com/repos/YOUR_USER/YOUR_REPO/dispatches
   repository_dispatch:
     types: [nifty-alert]
 
-  # Fallback: GitHub's own cron (UTC) — every 5 min during market hours
-  # 09:15–15:30 IST = 03:45–10:00 UTC
- 
+  schedule:
+    - cron: "*/5 3-10 * * 1-5"
 
-  # Manual trigger from GitHub UI for testing
   workflow_dispatch:
     inputs:
       expiry:
@@ -26,38 +22,44 @@ on:
         required: false
         default: "below"
 
+# Allow workflow to push docs/ back to the repo for GitHub Pages
+permissions:
+  contents: write
+  pages:    write
+  id-token: write
+
 jobs:
   alert:
     runs-on: ubuntu-latest
-    timeout-minutes: 8      # entire job must finish in 8 min
+    timeout-minutes: 8
 
     steps:
-      # ── 1. Checkout repo ────────────────────────────────────────────────────
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 2. Restore crossover state from cache ───────────────────────────────
-      # State file persists across runs so we don't re-alert same crossover
+      # ── 2. Restore crossover state ───────────────────────────────────────────
       - name: Restore state cache
         uses: actions/cache@v4
         with:
           path: crossover_state.json
           key: crossover-state-${{ runner.os }}
-          restore-keys: |
-            crossover-state-
+          restore-keys: crossover-state-
 
-      # ── 3. Set up Python ────────────────────────────────────────────────────
+      # ── 3. Python setup ──────────────────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
-      # ── 4. Install dependencies ─────────────────────────────────────────────
+      # ── 4. Install dependencies ──────────────────────────────────────────────
       - name: Install dependencies
         run: pip install fyers-apiv3
 
-      # ── 5. Run alert script ─────────────────────────────────────────────────
+      # ── 5. Run alert + snapshot ──────────────────────────────────────────────
       - name: Run crossover alert
         env:
           FYERS_CLIENT_ID:    ${{ secrets.FYERS_CLIENT_ID }}
@@ -66,21 +68,42 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_FILE:         crossover_state.json
         run: |
-          # Resolve inputs — workflow_dispatch wins, else use defaults
           EXPIRY="${{ github.event.inputs.expiry || github.event.client_payload.expiry || '26JUN' }}"
           ALERT="${{ github.event.inputs.alert  || github.event.client_payload.alert  || 'below' }}"
           DRY="${{ github.event.inputs.dry_run  || 'false' }}"
 
           ARGS="--expiry $EXPIRY --alert $ALERT"
-          if [ "$DRY" = "true" ]; then
-            ARGS="$ARGS --dry-run"
-          fi
+          if [ "$DRY" = "true" ]; then ARGS="$ARGS --dry-run"; fi
 
           echo "Running: python run_live.py $ARGS"
           python run_live.py $ARGS
 
-      # ── 6. Save updated state back to cache ─────────────────────────────────
-      # Always save even if the alert step failed, so state isn't lost
+      # ── 6. Commit docs/ snapshot to repo ────────────────────────────────────
+      - name: Commit dashboard snapshot
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Only commit if docs/ actually changed
+          if [ -d docs ] && ! git diff --quiet docs/; then
+            git add docs/
+            CANDLE_TIME=$(python3 -c "
+          import json, sys
+          try:
+              d = json.load(open('docs/data.json'))
+              print(d['meta']['candle_time'])
+          except:
+              print('unknown')
+          ")
+            git commit -m "snapshot: ${CANDLE_TIME} IST [skip ci]"
+            git push
+            echo "docs/ committed for candle ${CANDLE_TIME}"
+          else
+            echo "No changes in docs/ — skipping commit"
+          fi
+
+      # ── 7. Save updated state ────────────────────────────────────────────────
       - name: Save state cache
         if: always()
         uses: actions/cache@v4
