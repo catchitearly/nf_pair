@@ -241,6 +241,11 @@ def main():
 
     state.save_bearish(prev_bearish)   # prev_bearish was mutated by filter_new_bearish
 
+    # ── Step 8c: Accumulate bearish history log for dashboard Tab 3 ──────────
+    # Live mode can't scan all candles like backtest (we only see latest),
+    # so we persist a log file and append new triggers each run.
+    state.append_bearish_log(new_bearish, ctime)
+
     # ── Step 9: Write snapshot JSON for GitHub Pages dashboard ───────────────
     import snapshot
     snapshot.write(

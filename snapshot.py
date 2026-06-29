@@ -49,6 +49,16 @@ def write(
         all_times = series["times"][:last_idx + 1]
         break
 
+    # Bearish setup history for Tab 3
+    # Backtest: scan all candles in one pass (full history available)
+    # Live:     read accumulated log from state (built up across 5-min runs)
+    import engine as _engine
+    if mode == "backtest":
+        bearish_history = _engine.detect_bearish_setup_all()
+    else:
+        import state as _state
+        bearish_history = _state.load_bearish_log()
+
     payload = {
         "meta": {
             "atm":         atm,
@@ -58,10 +68,11 @@ def write(
             "mode":        mode,
             "widening_window": config.WIDENING_WINDOW,
         },
-        "case1":      case1,
-        "case2":      case2,
-        "crossovers": crossovers,
-        "charts":     charts,
+        "case1":           case1,
+        "case2":           case2,
+        "crossovers":      crossovers,
+        "bearish_history": bearish_history,
+        "charts":          charts,
     }
 
     data_path = os.path.join(DOCS_DIR, "data.json")
@@ -100,10 +111,11 @@ def _write_html() -> None:
   const meta = payload.meta;
 
   // Populate globals the live dashboard normally gets from /api/status + /api/data
-  candleTimes = meta.candle_times;
-  case1Data   = payload.case1;
-  case2Data   = payload.case2;
-  currentIdx  = meta.candle_count - 1;
+  candleTimes  = meta.candle_times;
+  case1Data    = payload.case1;
+  case2Data    = payload.case2;
+  bearish3Data = payload.bearish_history || [];
+  currentIdx   = meta.candle_count - 1;
 
   // Patch fetch so chart clicks work against embedded data
   window._staticCharts = payload.charts;
@@ -138,6 +150,7 @@ def _write_html() -> None:
   // Render pair lists
   document.getElementById('tab1-count').textContent = case1Data.length;
   document.getElementById('tab2-count').textContent = case2Data.length;
+  document.getElementById('tab3-count').textContent = bearish3Data.length;
   renderPairList();
 
   // Override selectPair chart fetch to use embedded data

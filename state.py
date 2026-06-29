@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 STATE_FILE        = os.environ.get("STATE_FILE",        "crossover_state.json")
 BEARISH_STATE_FILE = os.environ.get("BEARISH_STATE_FILE", "bearish_state.json")
+BEARISH_LOG_FILE   = os.environ.get("BEARISH_LOG_FILE",   "bearish_log.json")
 
 
 def load() -> Dict[str, str]:
@@ -134,3 +135,53 @@ def filter_new_bearish(matches: list, prev_triggered: Dict[str, int], current_id
             new_alerts.append(m)
             prev_triggered[label] = current_idx   # mark as alerted
     return new_alerts
+
+
+# ── bearish setup history log ─────────────────────────────────────────────────
+# In live mode we accumulate triggers across runs into a single log file.
+# Resets each new trading day (date changes).
+
+def _today_str() -> str:
+    import datetime
+    return datetime.date.today().isoformat()
+
+
+def load_bearish_log() -> list:
+    """Return list of all bearish triggers logged today. Empty list if none/stale."""
+    if not os.path.exists(BEARISH_LOG_FILE):
+        return []
+    try:
+        with open(BEARISH_LOG_FILE) as f:
+            data = json.load(f)
+        # Reset if log is from a previous day
+        if data.get("date") != _today_str():
+            logger.info("Bearish log is from previous day — resetting")
+            return []
+        return data.get("triggers", [])
+    except Exception as e:
+        logger.warning("Failed to load bearish log: %s", e)
+        return []
+
+
+def append_bearish_log(new_triggers: list, candle_time_str: str) -> None:
+    """Append new bearish setup triggers to today's log file."""
+    if not new_triggers:
+        return
+    existing = load_bearish_log()
+    # Enrich each trigger with the candle_str if not already set
+    for t in new_triggers:
+        if "candle_str" not in t:
+            t["candle_str"] = candle_time_str
+    existing.extend(new_triggers)
+    # Keep sorted by candle_time epoch if present, else by order added
+    existing.sort(key=lambda x: x.get("candle_time", 0))
+    data = {
+        "date":     _today_str(),
+        "triggers": existing,
+    }
+    try:
+        with open(BEARISH_LOG_FILE, "w") as f:
+            json.dump(data, f)
+        logger.info("Bearish log updated: %d total triggers today", len(existing))
+    except Exception as e:
+        logger.error("Failed to save bearish log: %s", e)

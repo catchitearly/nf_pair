@@ -475,6 +475,47 @@
     from { opacity: 0; transform: translateY(-4px); }
     to   { opacity: 1; transform: translateY(0); }
   }
+
+  /* ── bearish setup tab (tab 3) ─────────────────────────────────────────── */
+  .tab-btn.t3 .dot  { background: #f5c842; }
+  .tab-btn.t3.active { border-bottom-color: #f5c842; }
+
+  .bearish-row {
+    display: grid;
+    grid-template-columns: 52px 1fr 72px 72px 72px 68px;
+    align-items: center;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    gap: 8px;
+    transition: background .1s;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .bearish-row:hover    { background: var(--surface2); }
+  .bearish-row.selected { background: var(--surface2); }
+  .bearish-row.selected .b-label { color: #f5c842; }
+
+  .b-time  { color: #f5c842; font-weight: 700; font-size: 12px; }
+  .b-label { font-weight: 600; font-size: 12px; color: var(--text); }
+  .b-val   { color: var(--muted); text-align: right; }
+  .b-drop  { color: var(--accent2); font-weight: 700; text-align: right; }
+
+  .bearish-header {
+    display: grid;
+    grid-template-columns: 52px 1fr 72px 72px 72px 68px;
+    padding: 5px 14px;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: .06em;
+    border-bottom: 1px solid var(--border2);
+    background: var(--surface);
+    text-transform: uppercase;
+  }
+  .bearish-header span { text-align: right; }
+  .bearish-header span:nth-child(2) { text-align: left; }
 </style>
 </head>
 <body>
@@ -542,6 +583,10 @@
     <span class="dot"></span> EMA9 &lt; VWAP
     <span class="tab-count" id="tab2-count">0</span>
   </button>
+  <button class="tab-btn t3" id="tab3-btn" onclick="switchTab(3)">
+    <span class="dot"></span> Bearish Setup
+    <span class="tab-count" id="tab3-count">0</span>
+  </button>
 </div>
 
 <!-- workspace -->
@@ -588,6 +633,7 @@ let currentIdx   = 74;
 let selectedPair = null;
 let case1Data    = [];
 let case2Data    = [];
+let bearish3Data = [];   // Tab 3: chronological bearish setup triggers
 let candleTimes  = [];
 let chart        = null;
 let liveTimer    = null;
@@ -708,8 +754,11 @@ async function fetchAndRender(idx) {
   case1Data = d.case1 || [];
   case2Data = d.case2 || [];
 
+  bearish3Data = d.bearish_history || [];
+
   document.getElementById('tab1-count').textContent = case1Data.length;
   document.getElementById('tab2-count').textContent = case2Data.length;
+  document.getElementById('tab3-count').textContent = bearish3Data.length;
 
   renderCrossovers([...case1Data, ...case2Data]);
   renderPairList();
@@ -789,14 +838,73 @@ function renderPairList() {
   }
 }
 
+// ── bearish setup list (tab 3) ───────────────────────────────────────────────
+function renderBearishList() {
+  const list   = document.getElementById('pair-list');
+  const filter = document.getElementById('search-input').value.toLowerCase();
+  const data   = bearish3Data.filter(r =>
+    r.label.toLowerCase().includes(filter) ||
+    (r.candle_str || '').includes(filter)
+  );
+
+  if (!data.length) {
+    list.innerHTML = `<div style="padding:20px;color:var(--muted);font-family:var(--mono);font-size:11px;text-align:center">No bearish setups detected</div>`;
+    return;
+  }
+
+  // Column header
+  list.innerHTML = `
+    <div class="bearish-header">
+      <span>TIME</span><span>PAIR</span>
+      <span>CLOSE[0]</span><span>EMA9[0]</span><span>VWAP[0]</span><span>DROP</span>
+    </div>`;
+
+  data.forEach((r, i) => {
+    const row = document.createElement('div');
+    const key = r.label + '@' + (r.candle_time || i);
+    row.className = 'bearish-row' + (selectedPair === key ? ' selected' : '');
+    row.innerHTML = `
+      <span class="b-time">${r.candle_str || '--:--'}</span>
+      <span class="b-label">${r.label}</span>
+      <span class="b-val">${r.price_0?.toFixed(2) ?? '--'}</span>
+      <span class="b-val">${r.ema9_0?.toFixed(2) ?? '--'}</span>
+      <span class="b-val">${r.vwap_0?.toFixed(2) ?? '--'}</span>
+      <span class="b-drop">${r.price_drop?.toFixed(2) ?? '--'}</span>
+    `;
+    row.onclick = () => {
+      selectedPair = key;
+      renderBearishList();
+      // Update header
+      document.getElementById('chart-pair-title').textContent = r.label;
+      const pctEl = document.getElementById('stat-pct');
+      pctEl.textContent = (r.pct_diff >= 0 ? '+' : '') + (r.pct_diff ?? 0).toFixed(2) + '%';
+      pctEl.className = 'val down';
+      document.getElementById('stat-price').textContent = r.price_0?.toFixed(2) ?? '--';
+      document.getElementById('stat-ema').textContent   = r.ema9_0?.toFixed(2)  ?? '--';
+      document.getElementById('stat-vwap').textContent  = r.vwap_0?.toFixed(2)  ?? '--';
+      document.getElementById('stat-ema').className  = 'val down';
+      document.getElementById('stat-vwap').className = 'val down';
+      // Draw chart up to the trigger candle
+      const chartIdx = r.candle_idx !== undefined ? r.candle_idx : currentIdx;
+      drawChart(r.label, chartIdx);
+    };
+    list.appendChild(row);
+  });
+}
+
 // ── tab switch ────────────────────────────────────────────────────────────────
 function switchTab(t) {
   currentTab = t;
   document.getElementById('tab1-btn').classList.toggle('active', t === 1);
   document.getElementById('tab2-btn').classList.toggle('active', t === 2);
+  document.getElementById('tab3-btn').classList.toggle('active', t === 3);
   selectedPair = null;
   document.getElementById('search-input').value = '';
-  renderPairList();
+  if (t === 3) {
+    renderBearishList();
+  } else {
+    renderPairList();
+  }
   showEmptyState();
 }
 

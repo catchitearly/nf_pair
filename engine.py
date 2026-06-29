@@ -262,6 +262,85 @@ def detect_bearish_setup(last_idx: int) -> List[dict]:
     logger.info("detect_bearish_setup: %d matches at idx=%d", len(matches), last_idx)
     return matches
 
+def detect_bearish_setup_all() -> list:
+    """
+    Scan ALL candles in the session and return every instance where the
+    bearish setup conditions were met, with the candle time included.
+    Used for backtest Tab 3 — shows full chronological history for the day.
+
+    Same 4 conditions as detect_bearish_setup but iterated over every idx >= 2.
+    Multiple hits for the same pair at different candles are all included.
+
+    Returns list sorted by candle epoch time (ascending — earliest first).
+    Each row includes candle_time (epoch) and candle_time_str (HH:MM).
+    """
+    if not _pair_cache:
+        return []
+
+    all_matches = []
+
+    for label, series in _pair_cache.items():
+        n     = len(series["times"])
+        price = series["price"]
+        ema9  = series["ema9"]
+        vwap  = series["vwap"]
+        times = series["times"]
+
+        for idx_0 in range(2, n):
+            idx_m1 = idx_0 - 1
+            idx_m2 = idx_0 - 2
+
+            if vwap[idx_m2] == 0 or vwap[idx_m1] == 0:
+                continue
+
+            # Condition 1 & 3: EMA9 crossed DOWN at [-1]
+            if not (ema9[idx_m2] > vwap[idx_m2] and ema9[idx_m1] < vwap[idx_m1]):
+                continue
+
+            # Condition 2: price[-1] < ema9[-1]
+            if not (price[idx_m1] < ema9[idx_m1]):
+                continue
+
+            # Condition 4: price[0] < price[-1]
+            if not (price[idx_0] < price[idx_m1]):
+                continue
+
+            pct_diff = (ema9[idx_0] - vwap[idx_0]) / vwap[idx_0] * 100 if vwap[idx_0] else 0
+
+            # Format candle time as HH:MM IST
+            try:
+                import datetime, zoneinfo
+                tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+            except Exception:
+                import datetime
+                tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+            dt  = datetime.datetime.fromtimestamp(times[idx_0], tz=tz)
+            tstr = dt.strftime("%H:%M")
+
+            all_matches.append({
+                "label":        label,
+                "candle_time":  times[idx_0],      # epoch for sorting
+                "candle_str":   tstr,              # HH:MM for display
+                "candle_idx":   idx_0,
+                # [0] current
+                "price_0":      round(price[idx_0],  2),
+                "ema9_0":       round(ema9[idx_0],   2),
+                "vwap_0":       round(vwap[idx_0],   2),
+                # [-1] previous
+                "price_m1":     round(price[idx_m1], 2),
+                "ema9_m1":      round(ema9[idx_m1],  2),
+                "vwap_m1":      round(vwap[idx_m1],  2),
+                # summary
+                "pct_diff":     round(pct_diff, 4),
+                "price_drop":   round(price[idx_0] - price[idx_m1], 2),
+            })
+
+    # Sort chronologically
+    all_matches.sort(key=lambda x: x["candle_time"])
+    logger.info("detect_bearish_setup_all: %d total triggers across session", len(all_matches))
+    return all_matches
+
+
 def candle_count() -> int:
     """Return number of candles in the first available symbol (75 max for full day)."""
     for series in _pair_cache.values():
