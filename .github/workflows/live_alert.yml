@@ -4,8 +4,7 @@ on:
   repository_dispatch:
     types: [nifty-alert]
 
-  schedule:
-    - cron: "*/5 3-10 * * 1-5"
+  
 
   workflow_dispatch:
     inputs:
