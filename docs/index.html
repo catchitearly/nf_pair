@@ -1,8 +1,1199 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Nifty Options Dashboard</title>
-<style>body{background:#0b0e14;color:#5a6282;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
-.dot{width:10px;height:10px;border-radius:50%;background:#00d4aa;animation:p .8s infinite}
-@keyframes p{0%,100%{opacity:1}50%{opacity:.2}}</style></head>
-<body><div class="dot"></div><div>Awaiting first market run…</div>
-<div style="font-size:11px">Dashboard populates after the first GitHub Actions run during market hours</div>
-</body></html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nifty Options · EMA/VWAP Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  /* ── design tokens ─────────────────────────────────────────── */
+  :root {
+    --bg:        #0b0e14;
+    --surface:   #12161f;
+    --surface2:  #1a1f2e;
+    --border:    #1e2435;
+    --border2:   #2a3045;
+    --accent1:   #00d4aa;   /* teal – EMA9 > VWAP */
+    --accent2:   #ff5f7e;   /* rose – EMA9 < VWAP */
+    --gold:      #f5c842;   /* widening indicator */
+    --text:      #e8eaf0;
+    --muted:     #5a6282;
+    --mono:      "JetBrains Mono", "Fira Code", "Courier New", monospace;
+    --sans:      "Inter", system-ui, sans-serif;
+    --radius:    6px;
+    --header-h:  54px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  /* ── top bar ───────────────────────────────────────────────── */
+  #topbar {
+    height: var(--header-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 24px;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  #topbar .logo {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--accent1);
+  }
+
+  #topbar .sep { flex: 1; }
+
+  .pill-toggle {
+    display: flex;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+  .pill-toggle button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 5px 16px;
+    font-size: 12px;
+    font-family: var(--mono);
+    cursor: pointer;
+    transition: all .15s;
+    border-radius: 20px;
+  }
+  .pill-toggle button.active {
+    background: var(--accent1);
+    color: #000;
+    font-weight: 700;
+  }
+
+  #date-input {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+  }
+  .status-dot.ok   { background: var(--accent1); box-shadow: 0 0 6px var(--accent1); }
+  .status-dot.err  { background: var(--accent2); }
+  .status-dot.busy { background: var(--gold); animation: pulse .8s infinite; }
+
+  @keyframes pulse {
+    0%,100% { opacity:1; } 50% { opacity:.3; }
+  }
+
+  #atm-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  #atm-badge span { color: var(--gold); font-weight: 700; }
+
+  #load-btn {
+    background: var(--accent1);
+    color: #000;
+    border: none;
+    padding: 6px 16px;
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  #load-btn:hover { opacity: .85; }
+  #load-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ── slider bar ────────────────────────────────────────────── */
+  #sliderbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  #sliderbar label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  #timeline-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    background: var(--border2);
+    border-radius: 2px;
+    outline: none;
+  }
+  #timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent1);
+    cursor: pointer;
+    box-shadow: 0 0 8px var(--accent1);
+  }
+
+  #time-display {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent1);
+    min-width: 50px;
+    text-align: right;
+  }
+
+  #widening-select {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  /* ── tabs ──────────────────────────────────────────────────── */
+  #tabbar {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding: 0 20px;
+  }
+
+  .tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    padding: 10px 20px;
+    font-size: 12px;
+    font-family: var(--mono);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all .15s;
+  }
+  .tab-btn .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+  }
+  .tab-btn.t1 .dot { background: var(--accent1); }
+  .tab-btn.t2 .dot { background: var(--accent2); }
+  .tab-btn.active {
+    color: var(--text);
+  }
+  .tab-btn.t1.active { border-bottom-color: var(--accent1); }
+  .tab-btn.t2.active { border-bottom-color: var(--accent2); }
+
+  .tab-count {
+    background: var(--border2);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── main layout ───────────────────────────────────────────── */
+  #workspace {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── pair list ─────────────────────────────────────────────── */
+  #pair-panel {
+    width: 340px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #pair-search {
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  #pair-search input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+  }
+
+  #pair-list {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+  }
+
+  .pair-row {
+    display: flex;
+    align-items: center;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    gap: 10px;
+    transition: background .1s;
+  }
+  .pair-row:hover { background: var(--surface2); }
+  .pair-row.selected { background: var(--surface2); }
+  .pair-row.selected .pair-label { color: var(--accent1); }
+
+  .rank-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    min-width: 22px;
+    text-align: right;
+  }
+
+  .pair-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pair-pct {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 52px;
+    text-align: right;
+  }
+  .pair-pct.up   { color: var(--accent1); }
+  .pair-pct.down { color: var(--accent2); }
+
+  .widening-flame {
+    font-size: 12px;
+    min-width: 14px;
+  }
+
+  /* ── chart panel ───────────────────────────────────────────── */
+  #chart-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  #chart-header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  #chart-pair-title {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .chart-stat {
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .chart-stat .lbl { color: var(--muted); }
+  .chart-stat .val { font-weight: 700; }
+  .chart-stat .val.up   { color: var(--accent1); }
+  .chart-stat .val.down { color: var(--accent2); }
+
+  #chart-wrap {
+    flex: 1;
+    padding: 20px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #chart-canvas { width: 100% !important; height: 100% !important; }
+
+  #empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  #empty-state .icon { font-size: 32px; }
+
+  /* ── loading overlay ───────────────────────────────────────── */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11,14,20,.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    gap: 16px;
+  }
+  #overlay.hidden { display: none; }
+
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border2);
+    border-top-color: var(--accent1);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #overlay-msg {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* ── crossover alert bar ───────────────────────────────────── */
+  #crossover-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #crossover-bar::-webkit-scrollbar { display: none; }
+
+  #crossover-bar.hidden { display: none; }
+
+  #crossover-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    letter-spacing: .06em;
+    flex-shrink: 0;
+  }
+
+  #crossover-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .cross-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    transition: opacity .15s, transform .1s;
+    animation: chipIn .25s ease;
+  }
+  .cross-chip:hover { opacity: .8; transform: scale(1.04); }
+
+  /* crossed above VWAP = bullish = teal */
+  .cross-chip.above {
+    background: rgba(0, 212, 170, 0.12);
+    border-color: rgba(0, 212, 170, 0.35);
+    color: var(--accent1);
+  }
+  /* crossed below VWAP = bearish = rose */
+  .cross-chip.below {
+    background: rgba(255, 95, 126, 0.12);
+    border-color: rgba(255, 95, 126, 0.35);
+    color: var(--accent2);
+  }
+
+  .chip-arrow { font-size: 10px; }
+
+  #crossover-empty {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  @keyframes chipIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── bearish setup tab (tab 3) ─────────────────────────────────────────── */
+  .tab-btn.t3 .dot  { background: #f5c842; }
+  .tab-btn.t3.active { border-bottom-color: #f5c842; }
+
+  .bearish-row {
+    display: grid;
+    grid-template-columns: 52px 1fr 72px 72px 72px 68px;
+    align-items: center;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    gap: 8px;
+    transition: background .1s;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .bearish-row:hover    { background: var(--surface2); }
+  .bearish-row.selected { background: var(--surface2); }
+  .bearish-row.selected .b-label { color: #f5c842; }
+
+  .b-time  { color: #f5c842; font-weight: 700; font-size: 12px; }
+  .b-label { font-weight: 600; font-size: 12px; color: var(--text); }
+  .b-val   { color: var(--muted); text-align: right; }
+  .b-drop  { color: var(--accent2); font-weight: 700; text-align: right; }
+
+  .bearish-header {
+    display: grid;
+    grid-template-columns: 52px 1fr 72px 72px 72px 68px;
+    padding: 5px 14px;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: .06em;
+    border-bottom: 1px solid var(--border2);
+    background: var(--surface);
+    text-transform: uppercase;
+  }
+  .bearish-header span { text-align: right; }
+  .bearish-header span:nth-child(2) { text-align: left; }
+</style>
+</head>
+<body>
+
+<!-- loading overlay -->
+<div id="overlay">
+  <div class="spinner"></div>
+  <div id="overlay-msg">Initialising…</div>
+</div>
+
+<!-- top bar -->
+<div id="topbar">
+  <div class="logo">⟨ NIFTY OPTIONS ⟩</div>
+
+  <div class="pill-toggle">
+    <button id="btn-backtest" class="active" onclick="setMode('backtest')">BACKTEST</button>
+    <button id="btn-live"                    onclick="setMode('live')">LIVE</button>
+  </div>
+
+  <input type="date" id="date-input" title="Backtest date">
+
+  <div id="atm-badge">ATM <span id="atm-val">—</span></div>
+
+  <div id="widening-wrap" style="display:flex;align-items:center;gap:6px">
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">WINDOW</span>
+    <select id="widening-select" onchange="setWindow(this.value)">
+      <option value="3">3</option>
+      <option value="5" selected>5</option>
+      <option value="10">10</option>
+    </select>
+  </div>
+
+  <div class="sep"></div>
+
+  <span class="status-dot" id="status-dot"></span>
+  <span id="status-text" style="font-family:var(--mono);font-size:11px;color:var(--muted)">idle</span>
+
+  <button id="load-btn" onclick="loadData()">LOAD</button>
+</div>
+
+<!-- slider bar -->
+<div id="sliderbar">
+  <label>TIMELINE</label>
+  <input type="range" id="timeline-slider" min="0" max="74" value="74" oninput="onSlider(this.value)">
+  <div id="time-display">—:—</div>
+  <label>CANDLES: <span id="candle-count-lbl" style="color:var(--text)">—</span></label>
+</div>
+
+
+<!-- crossover alert bar -->
+<div id="crossover-bar" class="hidden">
+  <span id="crossover-label">⚡ CROSSOVER</span>
+  <div id="crossover-chips">
+    <span id="crossover-empty">none this candle</span>
+  </div>
+</div>
+
+<!-- tab bar -->
+<div id="tabbar">
+  <button class="tab-btn t1 active" id="tab1-btn" onclick="switchTab(1)">
+    <span class="dot"></span> EMA9 &gt; VWAP
+    <span class="tab-count" id="tab1-count">0</span>
+  </button>
+  <button class="tab-btn t2" id="tab2-btn" onclick="switchTab(2)">
+    <span class="dot"></span> EMA9 &lt; VWAP
+    <span class="tab-count" id="tab2-count">0</span>
+  </button>
+  <button class="tab-btn t3" id="tab3-btn" onclick="switchTab(3)">
+    <span class="dot"></span> Bearish Setup
+    <span class="tab-count" id="tab3-count">0</span>
+  </button>
+</div>
+
+<!-- workspace -->
+<div id="workspace">
+  <div id="pair-panel">
+    <div id="pair-search">
+      <input type="text" id="search-input" placeholder="Filter pairs…" oninput="renderPairList()">
+    </div>
+    <div id="pair-list"></div>
+  </div>
+
+  <div id="chart-panel">
+    <div id="chart-header">
+      <div id="chart-pair-title">—</div>
+      <div class="chart-stat">
+        <span class="lbl">PRICE </span><span class="val" id="stat-price">—</span>
+      </div>
+      <div class="chart-stat">
+        <span class="lbl">EMA9 </span><span class="val" id="stat-ema">—</span>
+      </div>
+      <div class="chart-stat">
+        <span class="lbl">VWAP </span><span class="val" id="stat-vwap">—</span>
+      </div>
+      <div class="chart-stat">
+        <span class="lbl">Δ% </span><span class="val" id="stat-pct">—</span>
+      </div>
+    </div>
+    <div id="chart-wrap">
+      <div id="empty-state">
+        <div class="icon">📊</div>
+        <div>Select a pair to view its chart</div>
+      </div>
+      <canvas id="chart-canvas" style="display:none"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── state ─────────────────────────────────────────────────────────────────────
+const API = '';   // same origin
+let mode         = 'backtest';
+let currentTab   = 1;
+let currentIdx   = 74;
+let selectedPair = null;
+let case1Data    = [];
+let case2Data    = [];
+let bearish3Data = [];   // Tab 3: chronological bearish setup triggers
+let candleTimes  = [];
+let chart        = null;
+let liveTimer    = null;
+let wideningWindow = 5;
+
+// ── init ──────────────────────────────────────────────────────────────────────
+window.onload = async () => {
+  // Set today's date
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('date-input').value = today;
+
+  await fetchStatus();
+  hideOverlay();
+};
+
+// ── mode toggle ───────────────────────────────────────────────────────────────
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-backtest').classList.toggle('active', m === 'backtest');
+  document.getElementById('btn-live').classList.toggle('active', m === 'live');
+  document.getElementById('date-input').disabled = m === 'live';
+
+  if (m === 'live') {
+    // Auto-refresh every 5 min
+    if (liveTimer) clearInterval(liveTimer);
+    liveTimer = setInterval(() => {
+      fetch(`${API}/api/refresh`, { method: 'POST' }).then(() => loadData());
+    }, 300_000);
+  } else {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  }
+}
+
+// ── widening window ───────────────────────────────────────────────────────────
+function setWindow(v) {
+  wideningWindow = parseInt(v);
+  // Trigger reload if data is already loaded
+  if (candleTimes.length > 0) onSlider(currentIdx);
+}
+
+// ── load / fetch flow ─────────────────────────────────────────────────────────
+async function loadData() {
+  showOverlay('Fetching data from Fyers API…');
+  setStatus('busy', 'loading…');
+  document.getElementById('load-btn').disabled = true;
+
+  try {
+    // Status gives us candle_times from the backend
+    const status = await fetchStatus();
+    if (!status || status.candle_count === 0) {
+      setStatus('err', 'No data');
+      showOverlay('No candle data returned. Check config.py credentials and date.');
+      return;
+    }
+
+    const slider = document.getElementById('timeline-slider');
+    slider.max   = status.candle_count - 1;
+    slider.value = status.candle_count - 1;
+    currentIdx   = status.candle_count - 1;
+    candleTimes  = status.candle_times;
+
+    document.getElementById('candle-count-lbl').textContent = status.candle_count;
+    document.getElementById('atm-val').textContent = status.atm ?? '—';
+
+    updateTimeDisplay(currentIdx);
+    await fetchAndRender(currentIdx);
+    setStatus('ok', mode === 'live' ? 'live' : 'ready');
+  } catch (e) {
+    console.error(e);
+    setStatus('err', 'error');
+    showOverlay('Connection failed. Is main.py running?');
+    return;
+  }
+
+  document.getElementById('load-btn').disabled = false;
+  hideOverlay();
+}
+
+async function fetchStatus() {
+  const r = await fetch(`${API}/api/status`);
+  const s = await r.json();
+  if (s.candle_count > 0) {
+    candleTimes = s.candle_times;
+    document.getElementById('atm-val').textContent = s.atm ?? '—';
+    document.getElementById('candle-count-lbl').textContent = s.candle_count;
+
+    // Sync widening select to backend config
+    const ws = document.getElementById('widening-select');
+    ws.value = String(s.widening_window);
+    wideningWindow = s.widening_window;
+  }
+  return s;
+}
+
+// ── slider ────────────────────────────────────────────────────────────────────
+async function onSlider(val) {
+  currentIdx = parseInt(val);
+  updateTimeDisplay(currentIdx);
+  await fetchAndRender(currentIdx);
+  if (selectedPair) drawChart(selectedPair, currentIdx);
+}
+
+function updateTimeDisplay(idx) {
+  if (!candleTimes.length || idx >= candleTimes.length) {
+    document.getElementById('time-display').textContent = '—:—';
+    return;
+  }
+  const d = new Date(candleTimes[idx] * 1000);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  document.getElementById('time-display').textContent = `${hh}:${mm}`;
+}
+
+// ── data fetch & render ───────────────────────────────────────────────────────
+async function fetchAndRender(idx) {
+  const r = await fetch(`${API}/api/data?idx=${idx}`);
+  const d = await r.json();
+  case1Data = d.case1 || [];
+  case2Data = d.case2 || [];
+
+  bearish3Data = d.bearish_history || [];
+
+  document.getElementById('tab1-count').textContent = case1Data.length;
+  document.getElementById('tab2-count').textContent = case2Data.length;
+  document.getElementById('tab3-count').textContent = bearish3Data.length;
+
+  renderCrossovers([...case1Data, ...case2Data]);
+  renderPairList();
+}
+
+// ── crossover bar ────────────────────────────────────────────────────────────
+function renderCrossovers(allPairs) {
+  const bar    = document.getElementById('crossover-bar');
+  const chips  = document.getElementById('crossover-chips');
+  const empty  = document.getElementById('crossover-empty');
+
+  const crossed = allPairs.filter(p => p.crossed);
+
+  if (!crossed.length) {
+    bar.classList.remove('hidden');
+    chips.innerHTML = '';
+    chips.appendChild(empty);
+    empty.style.display = 'inline';
+    return;
+  }
+
+  empty.style.display = 'none';
+  bar.classList.remove('hidden');
+  chips.innerHTML = '';
+
+  crossed.forEach(p => {
+    const chip = document.createElement('span');
+    chip.className = `cross-chip ${p.cross_dir}`;
+    const arrow = p.cross_dir === 'above' ? '↑' : '↓';
+    const label = p.cross_dir === 'above' ? 'above VWAP' : 'below VWAP';
+    chip.innerHTML = `<span class="chip-arrow">${arrow}</span>${p.label}<span style="font-weight:400;font-size:10px;opacity:.7">&nbsp;${label}</span>`;
+    chip.title = `${p.label} EMA9 crossed ${label} | Δ${p.pct_diff >= 0 ? '+' : ''}${p.pct_diff.toFixed(2)}%`;
+    // Click chip → jump to that pair
+    chip.onclick = () => {
+      // Switch to correct tab first
+      const targetTab = p.ema_gt_vwap ? 1 : 2;
+      if (currentTab !== targetTab) switchTab(targetTab);
+      selectPair(p.label, p, 0);
+    };
+    chips.appendChild(chip);
+  });
+}
+
+// ── pair list rendering ───────────────────────────────────────────────────────
+function renderPairList() {
+  const data    = currentTab === 1 ? case1Data : case2Data;
+  const filter  = document.getElementById('search-input').value.toLowerCase();
+  const list    = document.getElementById('pair-list');
+  const accent  = currentTab === 1 ? 'up' : 'down';
+
+  const filtered = data.filter(p => p.label.toLowerCase().includes(filter));
+  list.innerHTML = '';
+
+  filtered.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'pair-row' + (p.label === selectedPair ? ' selected' : '');
+    row.dataset.label = p.label;
+
+    const flame   = p.widening_score > 0.3 ? '🔥' : '';
+    const xbadge  = p.crossed ? `<span title="EMA9 crossed ${p.cross_dir} VWAP this candle" style="font-size:11px;margin-right:1px">${p.cross_dir === 'above' ? '⚡' : '⚡'}</span>` : '';
+    const sign    = p.pct_diff >= 0 ? '+' : '';
+
+    row.innerHTML = `
+      <span class="rank-badge">#${i + 1}</span>
+      ${xbadge}
+      <span class="pair-label">${p.label}</span>
+      <span class="widening-flame">${flame}</span>
+      <span class="pair-pct ${accent}">${sign}${p.pct_diff.toFixed(2)}%</span>
+    `;
+
+    row.onclick = () => selectPair(p.label, p, i + 1);
+    list.appendChild(row);
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:20px;color:var(--muted);font-family:var(--mono);font-size:11px;text-align:center">No pairs match</div>`;
+  }
+}
+
+// ── bearish setup list (tab 3) ───────────────────────────────────────────────
+function renderBearishList() {
+  const list   = document.getElementById('pair-list');
+  const filter = document.getElementById('search-input').value.toLowerCase();
+  const data   = bearish3Data.filter(r =>
+    r.label.toLowerCase().includes(filter) ||
+    (r.candle_str || '').includes(filter)
+  );
+
+  if (!data.length) {
+    list.innerHTML = `<div style="padding:20px;color:var(--muted);font-family:var(--mono);font-size:11px;text-align:center">No bearish setups detected</div>`;
+    return;
+  }
+
+  // Column header
+  list.innerHTML = `
+    <div class="bearish-header">
+      <span>TIME</span><span>PAIR</span>
+      <span>CLOSE[0]</span><span>EMA9[0]</span><span>VWAP[0]</span><span>DROP</span>
+    </div>`;
+
+  data.forEach((r, i) => {
+    const row = document.createElement('div');
+    const key = r.label + '@' + (r.candle_time || i);
+    row.className = 'bearish-row' + (selectedPair === key ? ' selected' : '');
+    row.innerHTML = `
+      <span class="b-time">${r.candle_str || '--:--'}</span>
+      <span class="b-label">${r.label}</span>
+      <span class="b-val">${r.price_0?.toFixed(2) ?? '--'}</span>
+      <span class="b-val">${r.ema9_0?.toFixed(2) ?? '--'}</span>
+      <span class="b-val">${r.vwap_0?.toFixed(2) ?? '--'}</span>
+      <span class="b-drop">${r.price_drop?.toFixed(2) ?? '--'}</span>
+    `;
+    row.onclick = () => {
+      selectedPair = key;
+      renderBearishList();
+      // Update header
+      document.getElementById('chart-pair-title').textContent = r.label;
+      const pctEl = document.getElementById('stat-pct');
+      pctEl.textContent = (r.pct_diff >= 0 ? '+' : '') + (r.pct_diff ?? 0).toFixed(2) + '%';
+      pctEl.className = 'val down';
+      document.getElementById('stat-price').textContent = r.price_0?.toFixed(2) ?? '--';
+      document.getElementById('stat-ema').textContent   = r.ema9_0?.toFixed(2)  ?? '--';
+      document.getElementById('stat-vwap').textContent  = r.vwap_0?.toFixed(2)  ?? '--';
+      document.getElementById('stat-ema').className  = 'val down';
+      document.getElementById('stat-vwap').className = 'val down';
+      // Draw chart up to the trigger candle
+      const chartIdx = r.candle_idx !== undefined ? r.candle_idx : currentIdx;
+      drawChart(r.label, chartIdx);
+    };
+    list.appendChild(row);
+  });
+}
+
+// ── tab switch ────────────────────────────────────────────────────────────────
+function switchTab(t) {
+  currentTab = t;
+  document.getElementById('tab1-btn').classList.toggle('active', t === 1);
+  document.getElementById('tab2-btn').classList.toggle('active', t === 2);
+  document.getElementById('tab3-btn').classList.toggle('active', t === 3);
+  selectedPair = null;
+  document.getElementById('search-input').value = '';
+  if (t === 3) {
+    renderBearishList();
+  } else {
+    renderPairList();
+  }
+  showEmptyState();
+}
+
+// ── pair selection & chart ────────────────────────────────────────────────────
+async function selectPair(label, rowData, rank) {
+  selectedPair = label;
+  renderPairList();   // refresh selection highlight
+
+  // Update header stats
+  document.getElementById('chart-pair-title').textContent = label;
+  const pctEl = document.getElementById('stat-pct');
+  const isUp  = rowData.ema_gt_vwap;
+  pctEl.textContent = `${rowData.pct_diff >= 0 ? '+' : ''}${rowData.pct_diff.toFixed(2)}%`;
+  pctEl.className   = `val ${isUp ? 'up' : 'down'}`;
+
+  await drawChart(label, currentIdx);
+}
+
+async function drawChart(label, idx) {
+  const r = await fetch(`${API}/api/chart?pair=${encodeURIComponent(label)}&idx=${idx}`);
+  const d = await r.json();
+  if (d.error || !d.times) return;
+
+  // Format time labels
+  const labels = d.times.map(t => {
+    const dt = new Date(t * 1000);
+    return `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+  });
+
+  // Update stats with latest values
+  const last = d.times.length - 1;
+  document.getElementById('stat-price').textContent = d.price[last]?.toFixed(2) ?? '—';
+  document.getElementById('stat-ema').textContent   = d.ema9[last]?.toFixed(2)  ?? '—';
+  document.getElementById('stat-vwap').textContent  = d.vwap[last]?.toFixed(2)  ?? '—';
+
+  const isUp = d.ema9[last] > d.vwap[last];
+  document.getElementById('stat-ema').className  = `val ${isUp ? 'up' : 'down'}`;
+  document.getElementById('stat-vwap').className = `val ${isUp ? 'up' : 'down'}`;
+
+  hideEmptyState();
+
+  const ctx = document.getElementById('chart-canvas').getContext('2d');
+  if (chart) chart.destroy();
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Price',
+          data: d.price,
+          borderColor: '#8ab4f8',
+          backgroundColor: 'rgba(138,180,248,.06)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.2,
+        },
+        {
+          label: 'EMA9',
+          data: d.ema9,
+          borderColor: '#00d4aa',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.2,
+        },
+        {
+          label: 'VWAP',
+          data: d.vwap,
+          borderColor: '#ff5f7e',
+          borderWidth: 2,
+          pointRadius: 0,
+          borderDash: [4, 3],
+          fill: false,
+          tension: 0.2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#5a6282',
+            font: { family: "'JetBrains Mono', monospace", size: 11 },
+            boxWidth: 20,
+            padding: 16,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#1a1f2e',
+          borderColor: '#2a3045',
+          borderWidth: 1,
+          titleColor: '#e8eaf0',
+          bodyColor: '#8ab4f8',
+          titleFont: { family: "'JetBrains Mono', monospace", size: 11 },
+          bodyFont:  { family: "'JetBrains Mono', monospace", size: 11 },
+          padding: 10,
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: '#5a6282',
+            font: { family: "'JetBrains Mono', monospace", size: 10 },
+            maxTicksLimit: 12,
+          },
+          grid: { color: '#1e2435' }
+        },
+        y: {
+          ticks: {
+            color: '#5a6282',
+            font: { family: "'JetBrains Mono', monospace", size: 10 },
+          },
+          grid: { color: '#1e2435' }
+        }
+      }
+    }
+  });
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+function showEmptyState() {
+  document.getElementById('empty-state').style.display = 'flex';
+  document.getElementById('chart-canvas').style.display = 'none';
+}
+
+function hideEmptyState() {
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('chart-canvas').style.display = 'block';
+}
+
+function showOverlay(msg) {
+  document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('overlay-msg').textContent = msg;
+}
+
+function hideOverlay() {
+  document.getElementById('overlay').classList.add('hidden');
+}
+
+function setStatus(type, text) {
+  const dot  = document.getElementById('status-dot');
+  const span = document.getElementById('status-text');
+  dot.className  = `status-dot ${type}`;
+  span.textContent = text;
+}
+</script>
+
+<script>
+// ── STATIC MODE: load data.json instead of /api/* ────────────────────────────
+(async function () {
+  showOverlay('Loading snapshot data…');
+
+  let payload;
+  try {
+    const r = await fetch('data.json');
+    payload  = await r.json();
+  } catch (e) {
+    showOverlay('Failed to load data.json — ' + e.message);
+    return;
+  }
+
+  const meta = payload.meta;
+
+  // Populate globals the live dashboard normally gets from /api/status + /api/data
+  candleTimes  = meta.candle_times;
+  case1Data    = payload.case1;
+  case2Data    = payload.case2;
+  bearish3Data = payload.bearish_history || [];
+  currentIdx   = meta.candle_count - 1;
+
+  // Patch fetch so chart clicks work against embedded data
+  window._staticCharts = payload.charts;
+  window._staticMeta   = meta;
+
+  // Fill status bar
+  document.getElementById('atm-val').textContent           = meta.atm;
+  document.getElementById('candle-count-lbl').textContent  = meta.candle_count;
+
+  // Slider
+  const slider   = document.getElementById('timeline-slider');
+  slider.max     = meta.candle_count - 1;
+  slider.value   = meta.candle_count - 1;
+  slider.oninput = function(e) {
+    const idx = parseInt(e.target.value);
+    currentIdx = idx;
+    updateTimeDisplay(idx);
+    _staticSliderFilter(idx, payload);
+  };
+
+  updateTimeDisplay(currentIdx);
+
+  // Mode badge
+  document.getElementById('btn-live').classList.add('active');
+  document.getElementById('btn-backtest').classList.remove('active');
+  document.getElementById('date-input').disabled = true;
+  document.getElementById('load-btn').style.display = 'none';
+
+  // Crossovers
+  renderCrossovers(payload.crossovers || []);
+
+  // Render pair lists
+  document.getElementById('tab1-count').textContent = case1Data.length;
+  document.getElementById('tab2-count').textContent = case2Data.length;
+  document.getElementById('tab3-count').textContent = bearish3Data.length;
+  renderPairList();
+
+  // Override selectPair chart fetch to use embedded data
+  window._origSelectPair = window.selectPair;
+  window.selectPair = async function(label, rowData, rank) {
+    selectedPair = label;
+    renderPairList();
+    document.getElementById('chart-pair-title').textContent = label;
+    const pctEl = document.getElementById('stat-pct');
+    pctEl.textContent = (rowData.pct_diff >= 0 ? '+' : '') + rowData.pct_diff.toFixed(2) + '%';
+    pctEl.className   = 'val ' + (rowData.ema_gt_vwap ? 'up' : 'down');
+    await _staticDrawChart(label, currentIdx);
+  };
+
+  setStatus('ok', 'snapshot');
+  hideOverlay();
+})();
+
+function _staticSliderFilter(idx, payload) {
+  // For the static snapshot we can't recompute ranks at arbitrary idx
+  // (that would need all raw candles). Instead we show the full day data
+  // and just limit the chart view to idx candles on click.
+  // The pair list always shows the final snapshot ranking.
+  renderCrossovers(payload.crossovers || []);
+  renderPairList();
+  if (selectedPair) _staticDrawChart(selectedPair, idx);
+}
+
+async function _staticDrawChart(label, idx) {
+  const series = (window._staticCharts || {})[label];
+  if (!series) return;
+
+  const n      = Math.min(idx + 1, series.times.length);
+  const times  = series.times.slice(0, n);
+  const price  = series.price.slice(0, n);
+  const ema9   = series.ema9.slice(0, n);
+  const vwap   = series.vwap.slice(0, n);
+
+  const labels = times.map(t => {
+    const dt = new Date(t * 1000);
+    return String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+  });
+
+  const last = n - 1;
+  document.getElementById('stat-price').textContent = price[last]?.toFixed(2) ?? '—';
+  document.getElementById('stat-ema').textContent   = ema9[last]?.toFixed(2)  ?? '—';
+  document.getElementById('stat-vwap').textContent  = vwap[last]?.toFixed(2)  ?? '—';
+  const isUp = ema9[last] > vwap[last];
+  document.getElementById('stat-ema').className  = 'val ' + (isUp ? 'up' : 'down');
+  document.getElementById('stat-vwap').className = 'val ' + (isUp ? 'up' : 'down');
+
+  hideEmptyState();
+  const ctx = document.getElementById('chart-canvas').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'Price', data:price, borderColor:'#8ab4f8', backgroundColor:'rgba(138,180,248,.06)', borderWidth:1.5, pointRadius:0, fill:true,  tension:0.2 },
+        { label:'EMA9',  data:ema9,  borderColor:'#00d4aa', borderWidth:2,   pointRadius:0, fill:false, tension:0.2 },
+        { label:'VWAP',  data:vwap,  borderColor:'#ff5f7e', borderWidth:2,   pointRadius:0, fill:false, tension:0.2, borderDash:[4,3] },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ labels:{ color:'#5a6282', font:{family:"'JetBrains Mono',monospace",size:11}, boxWidth:20, padding:16 }},
+        tooltip:{ backgroundColor:'#1a1f2e', borderColor:'#2a3045', borderWidth:1, titleColor:'#e8eaf0', bodyColor:'#8ab4f8', titleFont:{family:"'JetBrains Mono',monospace",size:11}, bodyFont:{family:"'JetBrains Mono',monospace",size:11}, padding:10 }
+      },
+      scales:{
+        x:{ ticks:{color:'#5a6282',font:{family:"'JetBrains Mono',monospace",size:10},maxTicksLimit:12}, grid:{color:'#1e2435'} },
+        y:{ ticks:{color:'#5a6282',font:{family:"'JetBrains Mono',monospace",size:10}},                  grid:{color:'#1e2435'} }
+      }
+    }
+  });
+}
+</script>
+
+</body>
+</html>
