@@ -733,7 +733,15 @@ async function onSlider(val) {
   currentIdx = parseInt(val);
   updateTimeDisplay(currentIdx);
   await fetchAndRender(currentIdx);
-  if (selectedPair) drawChart(selectedPair, currentIdx);
+  if (selectedPair) {
+    // Tab 3 uses composite key "label@epoch" — extract real label
+    const label = selectedPair.includes('@') ? selectedPair.split('@')[0] : selectedPair;
+    if (window._staticCharts) {
+      await _staticDrawChart(label, currentIdx);
+    } else {
+      await drawChart(label, currentIdx);
+    }
+  }
 }
 
 function updateTimeDisplay(idx) {
@@ -871,10 +879,11 @@ function renderBearishList() {
       <span class="b-val">${r.vwap_0?.toFixed(2) ?? '--'}</span>
       <span class="b-drop">${r.price_drop?.toFixed(2) ?? '--'}</span>
     `;
-    row.onclick = () => {
+    row.onclick = async () => {
       selectedPair = key;
       renderBearishList();
-      // Update header
+
+      // Update header stats with [0] candle values
       document.getElementById('chart-pair-title').textContent = r.label;
       const pctEl = document.getElementById('stat-pct');
       pctEl.textContent = (r.pct_diff >= 0 ? '+' : '') + (r.pct_diff ?? 0).toFixed(2) + '%';
@@ -884,9 +893,17 @@ function renderBearishList() {
       document.getElementById('stat-vwap').textContent  = r.vwap_0?.toFixed(2)  ?? '--';
       document.getElementById('stat-ema').className  = 'val down';
       document.getElementById('stat-vwap').className = 'val down';
-      // Draw chart up to the trigger candle
-      const chartIdx = r.candle_idx !== undefined ? r.candle_idx : currentIdx;
-      drawChart(r.label, chartIdx);
+
+      // Draw chart up to the trigger candle index
+      const chartIdx = (r.candle_idx !== undefined) ? r.candle_idx : currentIdx;
+
+      // Use static chart data if available (GitHub Pages / snapshot mode),
+      // otherwise call the live /api/chart endpoint
+      if (window._staticCharts) {
+        await _staticDrawChart(r.label, chartIdx);
+      } else {
+        await drawChart(r.label, chartIdx);
+      }
     };
     list.appendChild(row);
   });

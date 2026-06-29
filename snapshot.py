@@ -170,13 +170,20 @@ def _write_html() -> None:
 })();
 
 function _staticSliderFilter(idx, payload) {
-  // For the static snapshot we can't recompute ranks at arbitrary idx
-  // (that would need all raw candles). Instead we show the full day data
-  // and just limit the chart view to idx candles on click.
+  // For the static snapshot we can't recompute ranks at arbitrary idx.
   // The pair list always shows the final snapshot ranking.
   renderCrossovers(payload.crossovers || []);
-  renderPairList();
-  if (selectedPair) _staticDrawChart(selectedPair, idx);
+  if (currentTab === 3) {
+    renderBearishList();
+  } else {
+    renderPairList();
+  }
+  // Redraw chart for whatever is selected (pair key or bearish key)
+  if (selectedPair) {
+    // Extract real pair label from composite key (label@epoch) used in Tab 3
+    const label = selectedPair.includes('@') ? selectedPair.split('@')[0] : selectedPair;
+    _staticDrawChart(label, idx);
+  }
 }
 
 async function _staticDrawChart(label, idx) {
