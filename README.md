@@ -1,92 +1,101 @@
-# Nifty Options Pair Dashboard
+# Nifty Options · EMA/VWAP Dashboard
 
-Fetches Nifty ATM ± 400 strike option data from Fyers, computes pair premiums, VWAP & EMA9, detects crossovers, sends Telegram alerts, and publishes an interactive dashboard to GitHub Pages.
-
----
-
-## How It Works
-
-```
-Manual trigger (GitHub Actions)
-  → Fetch Nifty spot → Round to ATM (nearest 100)
-  → Build 5 CE+PE pairs (ATM, ±100, ±200, ±300, ±400)
-  → Fetch 2-day 5-min OHLCV for each symbol via Fyers
-  → Combine pair premiums → compute VWAP + EMA9
-  → Detect crossovers → send Telegram alerts
-  → Generate HTML dashboard → deploy to GitHub Pages
-```
+Real-time and historical dashboard for Nifty option pairs using EMA9 vs VWAP analysis.
 
 ---
 
 ## Setup
 
-### 1. Fork / Clone this repo
+```bash
+cd nifty_options
+pip install -r requirements.txt
+```
 
-### 2. Enable GitHub Pages
-- Go to **Settings → Pages**
-- Source: **Deploy from a branch**
-- Branch: `gh-pages` / `/ (root)`
+### 1. Set credentials in `config.py`
 
-### 3. Add GitHub Secrets
-Go to **Settings → Secrets and variables → Actions → New repository secret**
-
-| Secret Name | Where to get it |
-|---|---|
-| `FYERS_CLIENT_ID` | Fyers API dashboard → My Apps |
-| `FYERS_ACCESS_TOKEN` | Generate daily via Fyers auth flow |
-| `TELEGRAM_BOT_TOKEN` | Create a bot via [@BotFather](https://t.me/BotFather) |
-| `TELEGRAM_CHAT_ID` | Get via [@userinfobot](https://t.me/userinfobot) or group ID |
-
-### 4. Update Expiry Date
-In `scripts/fetch_and_analyze.py`, update this line to the current Tuesday expiry:
 ```python
-EXPIRY_DATE = "26623"   # Format: YYMMDD  e.g. 25 June 2026 = 26625 (if Tuesday)
+CLIENT_ID    = "XXXXXXXXXXX-100"   # Fyers app client ID
+ACCESS_TOKEN = "eyJ..."            # Fresh access token (generate daily)
 ```
 
-### 5. Run Manually
-- Go to **Actions → Nifty Options Dashboard → Run workflow**
+### 2. Set expiry (optional)
 
-### 6. View Dashboard
-After the workflow completes, visit:
+Leave `EXPIRY_DATE = ""` to auto-pick the nearest weekly Thursday expiry.
+Or set explicitly: `EXPIRY_DATE = "24-JUL-2025"`
+
+---
+
+## Run
+
+### Backtest mode (replay a historical day)
+
+```bash
+python main.py --mode backtest --date 2025-07-10
 ```
-https://<your-username>.github.io/<repo-name>/
+
+### Live mode (today's session, auto-refreshes every 5 min)
+
+```bash
+python main.py --mode live
+```
+
+### Extra options
+
+```bash
+# Custom expiry
+python main.py --mode backtest --date 2025-07-10 --expiry "24-JUL-2025"
+
+# Custom widening window (default 5 candles)
+python main.py --mode backtest --date 2025-07-10 --window 10
 ```
 
 ---
 
-## Pair Structure
+## Dashboard → http://localhost:8080
 
-| Pair | CE Strike | PE Strike |
-|------|-----------|-----------|
-| ATM Straddle | ATM | ATM |
-| ATM ± 100 | ATM + 100 | ATM − 100 |
-| ATM ± 200 | ATM + 200 | ATM − 200 |
-| ATM ± 300 | ATM + 300 | ATM − 300 |
-| ATM ± 400 | ATM + 400 | ATM − 400 |
-
----
-
-## Crossover Alerts (Telegram)
-
-Alerts are sent when:
-- **Price crosses ↑/↓ VWAP**
-- **Price crosses ↑/↓ EMA9**
-- **EMA9 crosses ↑/↓ VWAP**
-
-Example message:
-```
-🚨 Nifty Options Crossover Alerts
-
-🟢 ATM Straddle (24400)
-  Signal : Price crossed ↑ VWAP
-  Premium: ₹312.50
-  Time   : 17-Jun 10:25 AM
-```
+| Control | Description |
+|---|---|
+| BACKTEST / LIVE toggle | Switch modes |
+| Date picker | Select backtest date |
+| LOAD button | Fetch data + compute all pairs |
+| Timeline slider | Scrub through 9:15 → 3:30 |
+| WINDOW dropdown | Widening candle window (3 / 5 / 10) |
+| Tab 1: EMA9 > VWAP | Bullish pairs ranked by % diff |
+| Tab 2: EMA9 < VWAP | Bearish pairs ranked by % diff |
+| 🔥 flame icon | Pair where gap is widening steadily |
+| Click any pair | Shows Price / EMA9 / VWAP line chart |
 
 ---
 
-## Notes on Fyers Access Token
+## Architecture
 
-Fyers access tokens expire daily. For automation:
-- Either regenerate the token manually before each run and update the secret
-- Or extend the script to handle TOTP-based token refresh (requires storing TOTP secret securely)
+```
+main.py       CLI entry point; bootstraps pipeline
+config.py     Credentials + constants
+fetcher.py    Fyers API: ATM detection, symbol building, OHLCV fetch
+engine.py     EMA9, VWAP, 169 pair series, ranking
+server.py     HTTP server + /api/* endpoints
+dashboard/
+  index.html  Self-contained frontend (Chart.js)
+```
+
+## API endpoints (for debugging)
+
+```
+GET  /api/status              → mode, ATM, candle_count, timestamps
+GET  /api/data?idx=<n>        → ranked case1 + case2 at candle n
+GET  /api/chart?pair=X&idx=n  → price/ema9/vwap series for one pair
+POST /api/refresh             → trigger live candle refresh
+```
+
+## Pair naming
+
+`24000C/23800P` = ATM CE 24000 + PE 23800 (premium sum as pair price)
+
+## Rank score formula
+
+```
+rank_score = |pct_diff| × (1 + 0.5 × widening_score)
+```
+
+Where `widening_score` = normalised slope of `|EMA9 - VWAP|` over the last N candles.
