@@ -26,6 +26,7 @@ MARKET_CLOSE = "15:30"
 EMA_PERIOD         = 9
 WIDENING_WINDOW    = 5        # configurable: candles to measure steady widening (3, 5, or 10)
 WIDENING_BOOST     = 0.5      # rank score multiplier for steady-widening pairs
+MIN_OPTION_PRICE   = 10.0     # skip CE/PE strikes with latest close below this before pairing
 
 # ─────────────────────────────────────────────
 #  Server settings

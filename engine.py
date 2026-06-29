@@ -34,16 +34,41 @@ _pair_cache: Dict[str, dict] = {}   # label → PairSeries
 
 # ── public API ────────────────────────────────────────────────────────────────
 
+def _latest_close(sym: str) -> float:
+    """Return the most recent close price for a symbol, or 0 if no data."""
+    candles = fetcher.candle_store.get(sym, [])
+    if not candles:
+        return 0.0
+    return candles[-1]["c"]
+
+
 def build_all_pairs() -> Dict[str, dict]:
-    """Compute series for all 169 CE×PE combinations. Returns _pair_cache."""
+    """
+    Compute series for all valid CE×PE combinations.
+    Skips any CE or PE whose latest close price is below MIN_OPTION_PRICE.
+    Returns _pair_cache.
+    """
     global _pair_cache
     _pair_cache = {}
 
     ce_syms = fetcher.ce_symbols
     pe_syms = fetcher.pe_symbols
+    min_px  = config.MIN_OPTION_PRICE
 
-    for ce_sym in ce_syms:
-        for pe_sym in pe_syms:
+    # Filter out illiquid strikes (price < min_px) before pairing
+    valid_ce = [s for s in ce_syms if _latest_close(s) >= min_px]
+    valid_pe = [s for s in pe_syms if _latest_close(s) >= min_px]
+
+    skipped_ce = len(ce_syms) - len(valid_ce)
+    skipped_pe = len(pe_syms) - len(valid_pe)
+    logger.info(
+        "Price filter (< %.0f): skipped %d CE, %d PE | valid: %d CE × %d PE = %d max pairs",
+        min_px, skipped_ce, skipped_pe, len(valid_ce), len(valid_pe),
+        len(valid_ce) * len(valid_pe),
+    )
+
+    for ce_sym in valid_ce:
+        for pe_sym in valid_pe:
             label  = _make_label(ce_sym, pe_sym)
             series = _compute_pair(ce_sym, pe_sym, label)
             if series:
