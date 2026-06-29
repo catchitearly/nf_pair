@@ -1,0 +1,90 @@
+name: Nifty Options · Live Crossover Alert
+
+on:
+  # cronjob.org hits this URL to trigger the workflow:
+  # https://api.github.com/repos/YOUR_USER/YOUR_REPO/dispatches
+  repository_dispatch:
+    types: [nifty-alert]
+
+  # Fallback: GitHub's own cron (UTC) — every 5 min during market hours
+  # 09:15–15:30 IST = 03:45–10:00 UTC
+  schedule:
+    - cron: "*/5 3-10 * * 1-5"
+
+  # Manual trigger from GitHub UI for testing
+  workflow_dispatch:
+    inputs:
+      expiry:
+        description: "Expiry string e.g. 26JUN"
+        required: true
+        default: "26JUN"
+      dry_run:
+        description: "Dry run (print alerts, don't send Telegram)"
+        required: false
+        default: "false"
+      alert:
+        description: "Alert direction: below / above / both"
+        required: false
+        default: "below"
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8      # entire job must finish in 8 min
+
+    steps:
+      # ── 1. Checkout repo ────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Restore crossover state from cache ───────────────────────────────
+      # State file persists across runs so we don't re-alert same crossover
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: crossover_state.json
+          key: crossover-state-${{ runner.os }}
+          restore-keys: |
+            crossover-state-
+
+      # ── 3. Set up Python ────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── 4. Install dependencies ─────────────────────────────────────────────
+      - name: Install dependencies
+        run: pip install fyers-apiv3
+
+      # ── 5. Run alert script ─────────────────────────────────────────────────
+      - name: Run crossover alert
+        env:
+          FYERS_CLIENT_ID:    ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATE_FILE:         crossover_state.json
+        run: |
+          # Resolve inputs — workflow_dispatch wins, else use defaults
+          EXPIRY="${{ github.event.inputs.expiry || github.event.client_payload.expiry || '26JUN' }}"
+          ALERT="${{ github.event.inputs.alert  || github.event.client_payload.alert  || 'below' }}"
+          DRY="${{ github.event.inputs.dry_run  || 'false' }}"
+
+          ARGS="--expiry $EXPIRY --alert $ALERT"
+          if [ "$DRY" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          echo "Running: python run_live.py $ARGS"
+          python run_live.py $ARGS
+
+      # ── 6. Save updated state back to cache ─────────────────────────────────
+      # Always save even if the alert step failed, so state isn't lost
+      - name: Save state cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: crossover_state.json
+          key: crossover-state-${{ runner.os }}
