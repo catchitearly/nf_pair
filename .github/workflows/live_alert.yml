@@ -8,8 +8,7 @@ on:
 
   # Fallback: GitHub's own cron (UTC) — every 5 min during market hours
   # 09:15–15:30 IST = 03:45–10:00 UTC
-  schedule:
-    - cron: "*/5 3-10 * * 1-5"
+ 
 
   # Manual trigger from GitHub UI for testing
   workflow_dispatch:
