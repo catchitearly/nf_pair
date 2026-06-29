@@ -59,6 +59,9 @@ def write(
         import state as _state
         bearish_history = _state.load_bearish_log()
 
+    # Backtest / live trades for Tab 4
+    bt_result = _engine.run_backtest(last_idx)
+
     payload = {
         "meta": {
             "atm":         atm,
@@ -72,6 +75,9 @@ def write(
         "case2":           case2,
         "crossovers":      crossovers,
         "bearish_history": bearish_history,
+        "trades":          bt_result["trades"],
+        "equity_curve":    bt_result["equity_curve"],
+        "bt_summary":      bt_result["summary"],
         "charts":          charts,
     }
 
@@ -115,6 +121,9 @@ def _write_html() -> None:
   case1Data    = payload.case1;
   case2Data    = payload.case2;
   bearish3Data = payload.bearish_history || [];
+  tradesData   = payload.trades          || [];
+  equityData   = payload.equity_curve    || [];
+  btSummary    = payload.bt_summary      || {};
   currentIdx   = meta.candle_count - 1;
 
   // Patch fetch so chart clicks work against embedded data
@@ -151,6 +160,7 @@ def _write_html() -> None:
   document.getElementById('tab1-count').textContent = case1Data.length;
   document.getElementById('tab2-count').textContent = case2Data.length;
   document.getElementById('tab3-count').textContent = bearish3Data.length;
+  document.getElementById('tab4-count').textContent = tradesData.length;
   renderPairList();
 
   // Override selectPair chart fetch to use embedded data

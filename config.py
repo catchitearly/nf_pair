@@ -28,6 +28,10 @@ WIDENING_WINDOW    = 5        # configurable: candles to measure steady widening
 WIDENING_BOOST     = 0.5      # rank score multiplier for steady-widening pairs
 MIN_OPTION_PRICE   = 10.0     # skip CE/PE strikes with latest close below this before pairing
 
+# ── Backtest / trade settings ─────────────────────────────────────────────────
+BT_MAX_ENTRY_PRICE = 480.0    # only short pairs with price[0] < this
+BT_EMA_PROXIMITY   = 10.0     # only enter if abs(price[0] - ema9[0]) <= this
+
 # ─────────────────────────────────────────────
 #  Server settings
 # ─────────────────────────────────────────────

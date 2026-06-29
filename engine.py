@@ -341,6 +341,189 @@ def detect_bearish_setup_all() -> list:
     return all_matches
 
 
+
+
+def run_backtest(last_idx: Optional[int] = None) -> dict:
+    """
+    Simulate short trades on pairs qualifying the Bearish Setup + entry filter.
+
+    Entry conditions (at candle [0]):
+      - All 4 bearish setup conditions met
+      - price[0] < config.BT_MAX_ENTRY_PRICE      (default 480)
+      - abs(price[0] - ema9[0]) <= config.BT_EMA_PROXIMITY  (default 10)
+      - No open trade already exists for this pair
+      - Candle time <= 14:30 IST (no new entries after 2:30 PM)
+
+    Exit conditions (checked on each subsequent candle):
+      - SL: price[candle] >= ema9[candle]  → exit at that candle close
+      - Hard close: candle time >= 15:00 IST → exit at that candle close
+
+    Returns:
+      {
+        "trades":        [ trade_dict, ... ],   sorted by entry_time
+        "equity_curve":  [ { "time": HH:MM, "epoch": int, "cumulative": float }, ... ]
+        "summary":       { total, wins, losses, open, total_pnl }
+      }
+    """
+    if not _pair_cache:
+        return {"trades": [], "equity_curve": [], "summary": {}}
+
+    try:
+        import datetime, zoneinfo
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+    except Exception:
+        import datetime
+        tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+    max_price   = config.BT_MAX_ENTRY_PRICE
+    ema_prox    = config.BT_EMA_PROXIMITY
+
+    # Cut-off epochs: no entry after 14:30, hard close at 15:00
+    def _hhmm_epoch(series_times, hh, mm):
+        """Find epoch for HH:MM on the same date as the first candle."""
+        if not series_times:
+            return None
+        base = datetime.datetime.fromtimestamp(series_times[0], tz=tz)
+        target = base.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        return int(target.timestamp())
+
+    trades      = []   # list of trade dicts
+    open_trades = {}   # label → trade dict (mutable, updated as we scan)
+
+    # Determine scan range
+    n_max = 0
+    for series in _pair_cache.values():
+        n_max = max(n_max, len(series["times"]))
+    scan_end = (last_idx + 1) if last_idx is not None else n_max
+
+    # Get cut-off epochs from first available series
+    first_times = next(iter(_pair_cache.values()))["times"]
+    no_entry_epoch  = _hhmm_epoch(first_times, 14, 30)
+    hard_close_epoch = _hhmm_epoch(first_times, 15,  0)
+
+    def _fmt(epoch):
+        return datetime.datetime.fromtimestamp(epoch, tz=tz).strftime("%H:%M")
+
+    # Scan candle by candle across all pairs simultaneously
+    for idx in range(2, scan_end):
+
+        for label, series in _pair_cache.items():
+            n     = len(series["times"])
+            if idx >= n:
+                continue
+
+            price  = series["price"]
+            ema9   = series["ema9"]
+            vwap   = series["vwap"]
+            times  = series["times"]
+
+            t_epoch = times[idx]
+
+            # ── Check exit for open trade ──────────────────────────────────
+            if label in open_trades:
+                trade = open_trades[label]
+                sl_hit    = price[idx] >= ema9[idx]
+                hard_close = (hard_close_epoch and t_epoch >= hard_close_epoch)
+
+                if sl_hit or hard_close:
+                    trade["exit_price"]  = round(price[idx], 2)
+                    trade["exit_time"]   = _fmt(t_epoch)
+                    trade["exit_epoch"]  = t_epoch
+                    trade["pnl"]         = round(trade["entry_price"] - trade["exit_price"], 2)
+                    trade["status"]      = "SL" if sl_hit else "Closed@3PM"
+                    del open_trades[label]
+
+            # ── Check entry for new trade ──────────────────────────────────
+            else:
+                # No new entries after 14:30
+                if no_entry_epoch and t_epoch > no_entry_epoch:
+                    continue
+
+                idx_m1 = idx - 1
+                idx_m2 = idx - 2
+
+                if vwap[idx_m2] == 0 or vwap[idx_m1] == 0:
+                    continue
+
+                # Bearish setup conditions
+                c1 = ema9[idx_m2] > vwap[idx_m2] and ema9[idx_m1] < vwap[idx_m1]
+                c2 = price[idx_m1] < ema9[idx_m1]
+                c4 = price[idx] < price[idx_m1]
+                if not (c1 and c2 and c4):
+                    continue
+
+                # Entry filters
+                if price[idx] >= max_price:
+                    continue
+                if abs(price[idx] - ema9[idx]) > ema_prox:
+                    continue
+
+                trade = {
+                    "label":        label,
+                    "entry_price":  round(price[idx], 2),
+                    "entry_time":   _fmt(t_epoch),
+                    "entry_epoch":  t_epoch,
+                    "entry_idx":    idx,
+                    "exit_price":   None,
+                    "exit_time":    None,
+                    "exit_epoch":   None,
+                    "pnl":          None,
+                    "status":       "Open",
+                    "ema9_entry":   round(ema9[idx], 2),
+                    "vwap_entry":   round(vwap[idx], 2),
+                }
+                open_trades[label] = trade
+                trades.append(trade)   # same dict — mutations reflect here
+
+    # Any still-open trades at end of scan = "Open" (live mode) or closed
+    # In live/partial-day scans they stay as Open with current P&L
+    for label, trade in open_trades.items():
+        series = _pair_cache.get(label)
+        if series:
+            last = min(scan_end - 1, len(series["times"]) - 1)
+            cur_price = series["price"][last]
+            trade["pnl"]    = round(trade["entry_price"] - cur_price, 2)
+            trade["status"] = "Open"
+            trade["exit_price"] = round(cur_price, 2)
+            trade["exit_time"]  = _fmt(series["times"][last]) + "*"
+
+    # Sort trades by entry time
+    trades.sort(key=lambda x: x["entry_epoch"])
+
+    # Build equity curve (cumulative P&L at each exit point)
+    closed = [t for t in trades if t["status"] != "Open"]
+    closed.sort(key=lambda x: x.get("exit_epoch") or 0)
+    cum = 0.0
+    equity_curve = []
+    for t in closed:
+        cum += t["pnl"] or 0
+        equity_curve.append({
+            "time":       t["exit_time"].rstrip("*"),
+            "epoch":      t.get("exit_epoch", 0),
+            "cumulative": round(cum, 2),
+            "label":      t["label"],
+            "pnl":        t["pnl"],
+        })
+
+    # Summary
+    closed_pnl = [t["pnl"] for t in trades if t["status"] != "Open" and t["pnl"] is not None]
+    open_pnl   = [t["pnl"] for t in trades if t["status"] == "Open"  and t["pnl"] is not None]
+    summary = {
+        "total":     len(trades),
+        "closed":    len(closed_pnl),
+        "open":      len(open_pnl),
+        "wins":      sum(1 for p in closed_pnl if p > 0),
+        "losses":    sum(1 for p in closed_pnl if p <= 0),
+        "total_pnl": round(sum(closed_pnl) + sum(open_pnl), 2),
+        "closed_pnl": round(sum(closed_pnl), 2),
+    }
+
+    logger.info("Backtest: %d trades | PnL=%.2f | W=%d L=%d Open=%d",
+                summary["total"], summary["total_pnl"],
+                summary["wins"], summary["losses"], summary["open"])
+
+    return {"trades": trades, "equity_curve": equity_curve, "summary": summary}
+
 def candle_count() -> int:
     """Return number of candles in the first available symbol (75 max for full day)."""
     for series in _pair_cache.values():
