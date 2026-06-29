@@ -218,6 +218,29 @@ def main():
     # ── Step 8: Save state ────────────────────────────────────────────────────
     state.save(current_sides)
 
+    # ── Step 8b: Bearish setup detection ─────────────────────────────────────
+    bearish_matches  = engine.detect_bearish_setup(last_idx)
+    prev_bearish     = state.load_bearish()
+    new_bearish      = state.filter_new_bearish(bearish_matches, prev_bearish, last_idx)
+
+    logger.info("Bearish setup: %d total matches, %d new (not yet alerted)",
+                len(bearish_matches), len(new_bearish))
+
+    if new_bearish:
+        if args.dry_run:
+            print("\n── DRY RUN · BEARISH SETUP ─────────────────────")
+            for m in new_bearish:
+                print(f"  ▼ {m['label']}")
+                print(f"    [-1] close={m['price_m1']} ema9={m['ema9_m1']} vwap={m['vwap_m1']}")
+                print(f"    [0]  close={m['price_0']}  ema9={m['ema9_0']}  vwap={m['vwap_0']}  drop={m['price_drop']}")
+            print("─────────────────────────────────────────────────\n")
+        else:
+            notifier.send_bearish_setup_alert(new_bearish, ctime, atm)
+    else:
+        logger.info("No new bearish setups to alert")
+
+    state.save_bearish(prev_bearish)   # prev_bearish was mutated by filter_new_bearish
+
     # ── Step 9: Write snapshot JSON for GitHub Pages dashboard ───────────────
     import snapshot
     snapshot.write(

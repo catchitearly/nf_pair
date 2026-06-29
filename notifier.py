@@ -99,3 +99,40 @@ def send_crossover_alert(crossovers: list, candle_time: str, atm: int) -> None:
         ]
 
     send("\n".join(lines).strip())
+
+
+def send_bearish_setup_alert(matches: list, candle_time: str, atm: int) -> None:
+    """
+    Send Telegram alert for pairs matching the bearish confirmation setup.
+
+    Setup recap (shown in message):
+      [-1] EMA9 crossed below VWAP  +  price < EMA9
+      [0]  price < price[-1]  (selling continues)
+    """
+    if not matches:
+        return
+
+    lines = [
+        "🔻 <b>Nifty Options · Bearish Setup Alert</b>",
+        f"🕐 Candle: <b>{candle_time}</b>  |  ATM: <b>{atm}</b>",
+        "",
+        "<i>EMA9 crossed ↓ VWAP at [-1], price already below EMA9, price[0] &lt; price[-1]</i>",
+        "",
+    ]
+
+    for m in matches:
+        drop_sign = "" if m["price_drop"] >= 0 else ""   # always negative here
+        lines += [
+            f"▼ <b>{m['label']}</b>",
+            f"   <b>[-1]</b>  Close: <code>{m['price_m1']:.2f}</code>  "
+            f"EMA9: <code>{m['ema9_m1']:.2f}</code>  "
+            f"VWAP: <code>{m['vwap_m1']:.2f}</code>",
+            f"   <b>[0] </b>  Close: <code>{m['price_0']:.2f}</code>  "
+            f"EMA9: <code>{m['ema9_0']:.2f}</code>  "
+            f"VWAP: <code>{m['vwap_0']:.2f}</code>  "
+            f"Drop: <code>{m['price_drop']:.2f}</code>",
+            "",
+        ]
+
+    sep = "\n"
+    send(sep.join(lines).strip())

@@ -172,6 +172,96 @@ def get_pair_series(label: str, up_to_idx: int) -> Optional[dict]:
     }
 
 
+
+
+def detect_bearish_setup(last_idx: int) -> List[dict]:
+    """
+    Detect pairs matching the bearish confirmation setup at the current candle.
+
+    Indexing (all values are candle CLOSE prices):
+      [-2] = two candles ago  (index: last_idx - 2)
+      [-1] = previous candle  (index: last_idx - 1)
+      [0]  = current candle   (index: last_idx)
+
+    All 4 conditions must hold:
+      1. ema9[-2] > vwap[-2]  AND  ema9[-1] < vwap[-1]
+            → EMA9 crossed DOWN through VWAP at the [-1] candle
+      2. price[-1] < ema9[-1]
+            → price was already below EMA9 when the cross happened
+      3. ema9[-1] < vwap[-1]
+            → cross is confirmed complete at [-1] (same as condition 1 rhs)
+      4. price[0] < price[-1]
+            → current close is lower than previous close (selling continues)
+
+    Returns list of matching pair dicts with full context for Telegram alert.
+    """
+    if not _pair_cache:
+        return []
+
+    # Need at least 3 candles: [-2], [-1], [0]
+    if last_idx < 2:
+        logger.debug("detect_bearish_setup: not enough candles (last_idx=%d)", last_idx)
+        return []
+
+    matches = []
+    idx_0  = last_idx        # [0]  current
+    idx_m1 = last_idx - 1   # [-1] previous
+    idx_m2 = last_idx - 2   # [-2] two ago
+
+    for label, series in _pair_cache.items():
+        n = len(series["times"])
+        if n <= idx_0:
+            continue   # series too short
+
+        price  = series["price"]
+        ema9   = series["ema9"]
+        vwap   = series["vwap"]
+
+        # Guard: skip if any VWAP is zero
+        if vwap[idx_m2] == 0 or vwap[idx_m1] == 0:
+            continue
+
+        # Condition 1 & 3: EMA9 crossed DOWN at [-1]
+        #   ema9[-2] was above vwap[-2]  →  ema9[-1] is below vwap[-1]
+        ema_was_above = ema9[idx_m2] > vwap[idx_m2]
+        ema_now_below = ema9[idx_m1] < vwap[idx_m1]
+        if not (ema_was_above and ema_now_below):
+            continue
+
+        # Condition 2: price[-1] < ema9[-1]
+        if not (price[idx_m1] < ema9[idx_m1]):
+            continue
+
+        # Condition 4: price[0] < price[-1]
+        if not (price[idx_0] < price[idx_m1]):
+            continue
+
+        # All 4 passed — build result row
+        pct_diff = (ema9[idx_0] - vwap[idx_0]) / vwap[idx_0] * 100 if vwap[idx_0] else 0
+
+        matches.append({
+            "label":       label,
+            "ce_sym":      series["ce_sym"],
+            "pe_sym":      series["pe_sym"],
+            # [0] current candle
+            "price_0":     round(price[idx_0],   2),
+            "ema9_0":      round(ema9[idx_0],    2),
+            "vwap_0":      round(vwap[idx_0],    2),
+            # [-1] previous candle
+            "price_m1":    round(price[idx_m1],  2),
+            "ema9_m1":     round(ema9[idx_m1],   2),
+            "vwap_m1":     round(vwap[idx_m1],   2),
+            # [-2] two candles ago
+            "ema9_m2":     round(ema9[idx_m2],   2),
+            "vwap_m2":     round(vwap[idx_m2],   2),
+            # summary
+            "pct_diff":    round(pct_diff, 4),
+            "price_drop":  round(price[idx_0] - price[idx_m1], 2),
+        })
+
+    logger.info("detect_bearish_setup: %d matches at idx=%d", len(matches), last_idx)
+    return matches
+
 def candle_count() -> int:
     """Return number of candles in the first available symbol (75 max for full day)."""
     for series in _pair_cache.values():

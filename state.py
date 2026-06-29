@@ -21,7 +21,8 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-STATE_FILE = os.environ.get("STATE_FILE", "crossover_state.json")
+STATE_FILE        = os.environ.get("STATE_FILE",        "crossover_state.json")
+BEARISH_STATE_FILE = os.environ.get("BEARISH_STATE_FILE", "bearish_state.json")
 
 
 def load() -> Dict[str, str]:
@@ -82,3 +83,54 @@ def detect_crossovers(
                 "cross_dir": cur,   # the new side it crossed to
             })
     return crossovers
+
+
+# ── bearish setup state ───────────────────────────────────────────────────────
+# Stores the last candle index at which each pair triggered the bearish setup,
+# so we alert only once per setup occurrence and not on every subsequent candle.
+
+def load_bearish() -> Dict[str, int]:
+    """Return { label: last_triggered_candle_idx }. Empty dict if no state."""
+    if not os.path.exists(BEARISH_STATE_FILE):
+        return {}
+    try:
+        with open(BEARISH_STATE_FILE) as f:
+            data = json.load(f)
+        age = time.time() - data.get("last_run_epoch", 0)
+        if age > 1800:
+            logger.info("Bearish state too old (%.0f s) — resetting", age)
+            return {}
+        return data.get("pairs", {})
+    except Exception as e:
+        logger.warning("Failed to load bearish state: %s", e)
+        return {}
+
+
+def save_bearish(triggered: Dict[str, int]) -> None:
+    """Persist { label: candle_idx } of last-triggered bearish setup."""
+    data = {
+        "last_run_epoch": int(time.time()),
+        "pairs": triggered,
+    }
+    try:
+        with open(BEARISH_STATE_FILE, "w") as f:
+            json.dump(data, f)
+        logger.info("Bearish state saved: %d pairs → %s", len(triggered), BEARISH_STATE_FILE)
+    except Exception as e:
+        logger.error("Failed to save bearish state: %s", e)
+
+
+def filter_new_bearish(matches: list, prev_triggered: Dict[str, int], current_idx: int) -> list:
+    """
+    From the list of bearish setup matches, return only those
+    that were NOT already triggered at this same candle index in the last run.
+    Also merges current matches into prev_triggered (mutates it in place).
+    """
+    new_alerts = []
+    for m in matches:
+        label       = m["label"]
+        last_candle = prev_triggered.get(label, -1)
+        if last_candle != current_idx:
+            new_alerts.append(m)
+            prev_triggered[label] = current_idx   # mark as alerted
+    return new_alerts
