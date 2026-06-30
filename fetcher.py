@@ -191,7 +191,7 @@ def fetch_historical(date: datetime.date, date_to: Optional[datetime.date] = Non
 
 def append_live_candles() -> None:
     today     = datetime.date.today()
-    yesterday = _prev_trading_day(today)
+    yesterday = datetime.date.today() #_prev_trading_day(today)
     fetch_historical(yesterday, date_to=today)
     logger.info("Live candle refresh complete")
 
