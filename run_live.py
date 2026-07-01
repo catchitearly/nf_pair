@@ -211,7 +211,7 @@ def main():
                       f"EMA9={c['ema9']:.2f}  VWAP={c['vwap']:.2f}")
             print("────────────────────────────────────────────\n")
         else:
-            notifier.send_crossover_alert(enriched, ctime, atm)
+            #notifier.send_crossover_alert(enriched, ctime, atm)
     else:
         logger.info("No crossovers to alert")
 
