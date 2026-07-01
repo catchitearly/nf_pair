@@ -233,7 +233,7 @@ def detect_bearish_setup(last_idx: int) -> List[dict]:
             continue
 
         # Condition 4: price[0] < price[-1]
-        if not (price[idx_0] < price[idx_m1]):
+        if not ((price[idx_0] < price[idx_m1]) and (price[idx_0] <500)):
             continue
 
         # All 4 passed — build result row
