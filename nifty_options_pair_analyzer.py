@@ -37,7 +37,7 @@ ACCESS_TOKEN = _require_env("FYERS_ACCESS_TOKEN")
 TG_BOT_TOKEN = _require_env("TELEGRAM_BOT_TOKEN")
 TG_CHAT_ID   = _require_env("TELEGRAM_CHAT_ID")
 
-EXPIRY_DATE     = "26JUN"          # YYMDD (no leading zero on month) — update every week
+EXPIRY_DATE     = "26707"          # YYMDD (no leading zero on month) — update every week
 INDEX_SYMBOL    = "NSE:NIFTY50-INDEX"
 STRIKE_STEP     = 100
 OTM_RANGE       = 500              # ATM ± 400
