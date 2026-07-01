@@ -11,7 +11,7 @@ on:
       expiry:
         description: "Expiry string e.g. 26JUN"
         required: true
-        default: "26JUN"
+        default: "26707"
       dry_run:
         description: "Dry run (print alerts, don't send Telegram)"
         required: false
