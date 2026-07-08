@@ -8,7 +8,7 @@ ACCESS_TOKEN = "YOUR_ACCESS_TOKEN"    # paste fresh token here
 #  Nifty options universe
 # ─────────────────────────────────────────────
 INDEX_SYMBOL   = "NSE:NIFTY50-INDEX"  # Fyers symbol for Nifty spot
-EXPIRY_DATE    = "26707"                   # e.g. "26JUN" or "26JUN25" or "26-JUN-2025"; leave "" to auto-pick nearest Thursday
+EXPIRY_DATE    = "26714"                   # e.g. "26JUN" or "26JUN25" or "26-JUN-2025"; leave "" to auto-pick nearest Thursday
 STRIKE_RANGE   = 600                  # ATM ± 600
 STRIKE_STEP    = 100
 OPTION_EXPIRY_FORMAT = "%d%b%y"       # Fyers format: 24JUL25
