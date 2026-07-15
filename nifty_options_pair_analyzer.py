@@ -37,7 +37,7 @@ ACCESS_TOKEN = _require_env("FYERS_ACCESS_TOKEN")
 TG_BOT_TOKEN = _require_env("TELEGRAM_BOT_TOKEN")
 TG_CHAT_ID   = _require_env("TELEGRAM_CHAT_ID")
 
-EXPIRY_DATE     = "26714"          # YYMDD (no leading zero on month) — update every week
+EXPIRY_DATE     = "26721"          # YYMDD (no leading zero on month) — update every week
 INDEX_SYMBOL    = "NSE:NIFTY50-INDEX"
 STRIKE_STEP     = 100
 OTM_RANGE       = 500              # ATM ± 400
@@ -239,7 +239,7 @@ def send_telegram(alerts: list[dict]):
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"_Details follow in next message(s)_"
     )
-    _tg_post(summary)
+    #_tg_post(summary) # edit line to send telegram post
 
     # ── Detail messages — chunked to stay under 4000 chars ──
     # Build individual alert lines first
