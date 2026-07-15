@@ -98,7 +98,7 @@ def send_crossover_alert(crossovers: list, candle_time: str, atm: int) -> None:
             "",
         ]
 
-    send("\n".join(lines).strip())
+    #send("\n".join(lines).strip())   #edit line for telegram post
 
 
 def send_bearish_setup_alert(matches: list, candle_time: str, atm: int) -> None:
@@ -135,4 +135,4 @@ def send_bearish_setup_alert(matches: list, candle_time: str, atm: int) -> None:
         ]
 
     sep = "\n"
-    send(sep.join(lines).strip())
+    #send(sep.join(lines).strip()) # edit line for telegram post
